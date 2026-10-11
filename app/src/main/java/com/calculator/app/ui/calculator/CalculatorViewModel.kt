@@ -1,22 +1,28 @@
 package com.calculator.app.ui.calculator
 
+import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
+import com.calculator.app.security.PinStore
+import java.util.Locale
 import net.objecthunter.exp4j.ExpressionBuilder
 
 enum class VaultMode {
-    NONE,           // Miniräknare
-    REAL,           // Riktiga vaulten
-    DECOY           // Falsk/tom vault
+    NONE,
+    REAL,
+    DECOY
 }
 
-class CalculatorViewModel : ViewModel() {
+class CalculatorViewModel(application: Application) : AndroidViewModel(application) {
 
-    // === PIN-inställningar ===
-    private var realPin: String = "6969"
-    private var decoyPin: String = "1234"
+    private val pinStore = PinStore(application)
+    private var realPin: String? = pinStore.getRealPin()
+    private var decoyPin: String? = pinStore.getDecoyPin()
+
+    var isPinConfigured by mutableStateOf(realPin != null && decoyPin != null)
+        private set
 
     var input by mutableStateOf("")
         private set
@@ -34,23 +40,61 @@ class CalculatorViewModel : ViewModel() {
         private set
 
     private var pendingVaultMode: VaultMode = VaultMode.NONE
+    private var justCalculated = false
+
+    fun configurePins(newRealPin: String, newDecoyPin: String): Boolean {
+        if (!isValidPin(newRealPin) || !isValidPin(newDecoyPin) || newRealPin == newDecoyPin) {
+            return false
+        }
+        if (!pinStore.savePins(newRealPin, newDecoyPin)) return false
+
+        realPin = newRealPin
+        decoyPin = newDecoyPin
+        isPinConfigured = true
+        return true
+    }
+
+    fun updateRealPin(newPin: String): Boolean {
+        if (!isValidPin(newPin) || newPin == decoyPin || !pinStore.saveRealPin(newPin)) {
+            return false
+        }
+        realPin = newPin
+        return true
+    }
+
+    fun updateDecoyPin(newPin: String): Boolean {
+        if (!isValidPin(newPin) || newPin == realPin || !pinStore.saveDecoyPin(newPin)) {
+            return false
+        }
+        decoyPin = newPin
+        return true
+    }
 
     fun onAction(action: CalculatorAction) {
         when (action) {
-            is CalculatorAction.Number -> input += action.number
+            is CalculatorAction.Number -> {
+                startNewEntryIfNeeded()
+                input += action.number
+            }
             is CalculatorAction.Operation -> {
-                if (input.isNotEmpty() && !isLastCharOperator()) {
+                if (input.isNotEmpty() && !isLastCharOperator() && result != ERROR_RESULT) {
                     input += action.operation
+                    result = ""
+                    justCalculated = false
                 }
             }
             is CalculatorAction.Clear -> {
                 input = ""
                 result = ""
+                justCalculated = false
             }
             is CalculatorAction.Delete -> {
                 if (input.isNotEmpty()) input = input.dropLast(1)
+                result = ""
+                justCalculated = false
             }
             is CalculatorAction.Decimal -> {
+                startNewEntryIfNeeded()
                 if (input.isEmpty() || isLastCharOperator()) {
                     input += "0."
                 } else if (!currentNumberHasDecimal()) {
@@ -61,9 +105,17 @@ class CalculatorViewModel : ViewModel() {
         }
     }
 
-    private fun isLastCharOperator(): Boolean {
-        if (input.isEmpty()) return true
-        return input.last() in listOf('+', '-', '*', '/', '%')
+    private fun startNewEntryIfNeeded() {
+        if (justCalculated || result == ERROR_RESULT) {
+            input = ""
+            result = ""
+            justCalculated = false
+        }
+    }
+
+    private fun isLastCharOperator(): Boolean = when (input.lastOrNull()) {
+        '+', '-', '*', '/', '%' -> true
+        else -> false
     }
 
     private fun currentNumberHasDecimal(): Boolean {
@@ -74,37 +126,57 @@ class CalculatorViewModel : ViewModel() {
     private fun performCalculation() {
         if (input.isBlank()) return
 
-        when (input) {
-            realPin -> {
-                input = ""
-                result = ""
+        when {
+            !justCalculated && input == realPin -> {
+                clearCalculator()
                 pendingVaultMode = VaultMode.REAL
                 shouldShowBiometric = true
             }
-            decoyPin -> {
-                input = ""
-                result = ""
+            !justCalculated && input == decoyPin -> {
+                clearCalculator()
                 vaultMode = VaultMode.DECOY
             }
             else -> {
                 try {
-                    val expression = ExpressionBuilder(input).build()
-                    val res = expression.evaluate()
-
-                    val finalResult = if (res == res.toLong().toDouble()) {
-                        res.toLong().toString()
-                    } else {
-                        String.format("%.8f", res).trimEnd('0').trimEnd('.')
+                    val value = ExpressionBuilder(input).build().evaluate()
+                    val finalResult = formatResult(value)
+                    if (finalResult == ERROR_RESULT) {
+                        result = ERROR_RESULT
+                        justCalculated = true
+                        return
                     }
 
                     result = finalResult
-                    history = (history + "$input = $finalResult").takeLast(15)
+                    history = (history + "$input = $finalResult").takeLast(MAX_HISTORY_ITEMS)
                     input = finalResult
-                } catch (e: Exception) {
-                    result = "Error"
+                    justCalculated = true
+                } catch (_: Exception) {
+                    result = ERROR_RESULT
+                    justCalculated = true
                 }
             }
         }
+    }
+
+    private fun formatResult(value: Double): String {
+        if (!value.isFinite()) return ERROR_RESULT
+
+        if (value % 1.0 == 0.0 &&
+            value >= Long.MIN_VALUE.toDouble() &&
+            value < Long.MAX_VALUE.toDouble()
+        ) {
+            return value.toLong().toString()
+        }
+
+        return String.format(Locale.US, "%.8f", value)
+            .trimEnd('0')
+            .trimEnd('.')
+    }
+
+    private fun clearCalculator() {
+        input = ""
+        result = ""
+        justCalculated = false
     }
 
     fun onBiometricSuccess() {
@@ -118,24 +190,21 @@ class CalculatorViewModel : ViewModel() {
         pendingVaultMode = VaultMode.NONE
     }
 
-    /** Panic / Lås vaulten omedelbart */
+    /** Panic / lock the vault immediately. */
     fun lockVault() {
         vaultMode = VaultMode.NONE
-        input = ""
-        result = ""
+        clearCalculator()
         shouldShowBiometric = false
         pendingVaultMode = VaultMode.NONE
     }
 
-    fun updateRealPin(newPin: String) {
-        if (newPin.length in 4..12 && newPin.all { it.isDigit() }) {
-            realPin = newPin
-        }
-    }
+    private fun isValidPin(pin: String): Boolean =
+        pin.length in MIN_PIN_LENGTH..MAX_PIN_LENGTH && pin.all { it.isDigit() }
 
-    fun updateDecoyPin(newPin: String) {
-        if (newPin.length in 4..12 && newPin.all { it.isDigit() }) {
-            decoyPin = newPin
-        }
+    private companion object {
+        const val ERROR_RESULT = "Error"
+        const val MIN_PIN_LENGTH = 4
+        const val MAX_PIN_LENGTH = 12
+        const val MAX_HISTORY_ITEMS = 15
     }
 }

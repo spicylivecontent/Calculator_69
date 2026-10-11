@@ -53,8 +53,18 @@ fun CalculatorScreen(
         }
     }
 
+    if (!viewModel.isPinConfigured) {
+        PinSetupScreen(onSavePins = viewModel::configurePins)
+        return
+    }
+
     when (viewModel.vaultMode) {
-        VaultMode.REAL -> VaultScreen(isDecoy = false, onLock = { viewModel.lockVault() })
+        VaultMode.REAL -> VaultScreen(
+            isDecoy = false,
+            onLock = { viewModel.lockVault() },
+            onChangeRealPin = viewModel::updateRealPin,
+            onChangeDecoyPin = viewModel::updateDecoyPin
+        )
         VaultMode.DECOY -> VaultScreen(isDecoy = true, onLock = { viewModel.lockVault() })
         VaultMode.NONE -> CalculatorUI(viewModel = viewModel)
     }
@@ -95,8 +105,12 @@ private fun showBiometricPrompt(
     )) {
         BiometricManager.BIOMETRIC_SUCCESS -> biometricPrompt.authenticate(promptInfo)
         else -> {
-            Toast.makeText(activity, "Ingen biometri tillgänglig – öppnar ändå", Toast.LENGTH_SHORT).show()
-            onSuccess()
+            Toast.makeText(
+                activity,
+                "Aktivera biometrisk autentisering på enheten för att öppna vaulten.",
+                Toast.LENGTH_LONG
+            ).show()
+            onFailedOrCancelled()
         }
     }
 }

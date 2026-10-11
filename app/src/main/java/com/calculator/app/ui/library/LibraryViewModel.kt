@@ -51,4 +51,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun removeDislikeRule(rule: DislikeRuleEntity) {
         viewModelScope.launch { repository.removeDislikeRule(rule) }
     }
+
+    fun removeSearchPreset(preset: SearchPresetEntity) {
+        viewModelScope.launch { repository.removeSearchPreset(preset) }
+    }
 }

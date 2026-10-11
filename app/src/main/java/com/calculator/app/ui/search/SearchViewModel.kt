@@ -8,12 +8,15 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.calculator.app.ai.QueryExpander
 import com.calculator.app.data.Repository
+import com.calculator.app.data.entity.SearchPresetEntity
 import com.calculator.app.data.entity.VideoEntity
 import com.calculator.app.data.extractor.MultiSiteSearcher
 import com.calculator.app.data.extractor.StreamResolver
 import com.calculator.app.data.model.SearchResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -61,6 +64,43 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         negativeKeywords = value
     }
 
+    fun useSearchPreset(preset: SearchPresetEntity) {
+        query = preset.query
+        negativeKeywords = preset.negativeKeywords
+        results = emptyList()
+        lastFeed = emptyList()
+        errorMessage = null
+        aiExplanation = null
+    }
+
+    fun saveSearchPreset(name: String): Boolean {
+        val safeName = name.trim().take(60)
+        val queryToSave = query.trim()
+        if (safeName.isBlank() || queryToSave.isBlank()) return false
+
+        val expanded = expander.expand(queryToSave)
+        if (expanded.blockedReason != null) {
+            errorMessage = expanded.blockedReason
+            return false
+        }
+        if (expanded.searchTerms.isBlank()) {
+            errorMessage = "Ange minst ett positivt sökord utöver exkluderingarna."
+            return false
+        }
+
+        val exclusionsToSave = negativeKeywords.trim()
+        viewModelScope.launch {
+            try {
+                repository.addSearchPreset(safeName, queryToSave, exclusionsToSave)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                errorMessage = "Kunde inte spara sökningen: ${e.message}"
+            }
+        }
+        return true
+    }
+
     fun search() {
         if (query.isBlank()) return
 
@@ -71,51 +111,67 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
             try {
                 val expanded = expander.expand(query)
+                if (expanded.blockedReason != null) {
+                    aiExplanation = null
+                    results = emptyList()
+                    lastFeed = emptyList()
+                    errorMessage = expanded.blockedReason
+                    return@launch
+                }
                 aiExplanation = expanded.explanation
+                if (expanded.searchTerms.isBlank()) {
+                    results = emptyList()
+                    lastFeed = emptyList()
+                    errorMessage = "Ange minst ett positivt sökord utöver exkluderingarna."
+                    return@launch
+                }
 
                 val raw = searcher.search(expanded.searchTerms)
 
                 val blocked = mutableSetOf<String>()
-                expanded.negativeKeywords.forEach { blocked.add(it.lowercase()) }
+                expanded.negativeKeywords.forEach { blocked.add(it.lowercase(Locale.ROOT)) }
                 negativeKeywords.split(",", "\n")
-                    .map { it.trim().lowercase() }
+                    .map { it.trim().lowercase(Locale.ROOT) }
                     .filter { it.isNotBlank() }
                     .forEach { blocked.add(it) }
 
                 val rules = repository.getDislikeRules().first()
                 rules.filter { it.type == "keyword" || it.type == "tag" }
-                    .forEach { blocked.add(it.value.lowercase()) }
+                    .forEach { blocked.add(it.value.lowercase(Locale.ROOT)) }
 
                 val filtered = raw.filter { result ->
-                    val titleLower = result.title.lowercase()
-                    blocked.none { bad -> titleLower.contains(bad) }
+                    val titleLower = result.title.lowercase(Locale.ROOT)
+                    !expander.containsBlockedAgeTerm(result.title) &&
+                        blocked.none { bad -> titleLower.contains(bad) }
                 }
 
                 results = filtered
                 lastFeed = filtered
 
-                filtered.take(40).forEach { r ->
-                    repository.insertVideo(
-                        VideoEntity(
-                            id = r.id,
-                            title = r.title,
-                            thumbnailUrl = r.thumbnailUrl,
-                            sourceSite = r.sourceSite,
-                            detailPageUrl = r.detailUrl
-                        )
+                val videosToSave = filtered.take(40).map { result ->
+                    VideoEntity(
+                        id = result.id,
+                        title = result.title,
+                        thumbnailUrl = result.thumbnailUrl,
+                        sourceSite = result.sourceSite,
+                        detailPageUrl = result.detailUrl
                     )
                 }
+                if (videosToSave.isNotEmpty()) repository.insertVideos(videosToSave)
 
                 if (results.isEmpty()) {
                     errorMessage = if (raw.isEmpty()) {
                         "Inga resultat hittades från någon sajt"
                     } else {
-                        "Alla resultat filtrerades bort av dina regler"
+                        "Resultaten filtrerades bort av säkerhets- eller exkluderingsregler."
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 errorMessage = "Fel vid sökning: ${e.message}"
                 results = emptyList()
+                lastFeed = emptyList()
             } finally {
                 isLoading = false
             }
@@ -134,6 +190,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 } else {
                     errorMessage = "Kunde inte hitta stream för denna video (${result.sourceSite})"
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 errorMessage = "Fel vid stream-extract: ${e.message}"
             } finally {
@@ -178,12 +236,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun addNeverShowAgain(keyword: String) {
-        if (keyword.isBlank()) return
+        val normalizedKeyword = keyword.trim().lowercase(Locale.ROOT)
+        if (normalizedKeyword.isBlank()) return
+
         viewModelScope.launch {
-            repository.addDislikeRule(type = "keyword", value = keyword.trim().lowercase())
-            results = results.filter {
-                !it.title.lowercase().contains(keyword.trim().lowercase())
-            }
+            repository.addDislikeRule(type = "keyword", value = normalizedKeyword)
+            results = results.filter { !it.title.lowercase(Locale.ROOT).contains(normalizedKeyword) }
+            lastFeed = lastFeed.filter { !it.title.lowercase(Locale.ROOT).contains(normalizedKeyword) }
         }
     }
 }

@@ -2,6 +2,7 @@ package com.calculator.app.network
 
 import okhttp3.Interceptor
 import okhttp3.Response
+import java.util.Locale
 
 /**
  * Lägger till privacy-vänliga headers och tar bort onödiga tracking-parametrar
@@ -25,7 +26,7 @@ class PrivacyInterceptor : Interceptor {
         // Bygg ny URL utan tracking-parametrar
         val cleanUrlBuilder = originalUrl.newBuilder()
         for (name in originalUrl.queryParameterNames) {
-            if (name.lowercase() in trackingParams) {
+            if (name.lowercase(Locale.ROOT) in trackingParams) {
                 cleanUrlBuilder.removeAllQueryParameters(name)
             }
         }

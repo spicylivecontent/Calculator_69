@@ -61,8 +61,9 @@ dependencies {
     // Material Icons Extended (WatchLater, VideoLibrary, m.fl.)
     implementation("androidx.compose.material:material-icons-extended")
 
-    // ViewModel Compose
+    // ViewModel Compose + viewModelScope extension
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
 
     // Math engine
     implementation("net.objecthunter:exp4j:0.4.8")
