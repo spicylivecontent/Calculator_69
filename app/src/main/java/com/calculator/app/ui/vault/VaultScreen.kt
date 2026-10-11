@@ -7,12 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.VideoLibrary
-import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,7 +25,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.calculator.app.data.entity.DislikeRuleEntity
+import com.calculator.app.data.entity.VideoEntity
 import com.calculator.app.data.model.SearchResult
+import com.calculator.app.ui.library.LibraryViewModel
+import com.calculator.app.ui.library.LibraryViewModelFactory
 import com.calculator.app.ui.player.TestPlayerButton
 import com.calculator.app.ui.player.VideoPlayerScreen
 import com.calculator.app.ui.search.SearchViewModel
@@ -40,6 +39,10 @@ enum class VaultTab {
     HOME, SEARCH, LIBRARY, SETTINGS
 }
 
+enum class LibrarySection {
+    OVERVIEW, FAVORITES, WATCH_LATER, DISLIKES
+}
+
 @Composable
 fun VaultScreen(
     isDecoy: Boolean = false,
@@ -47,6 +50,12 @@ fun VaultScreen(
 ) {
     var currentTab by remember { mutableStateOf(VaultTab.HOME) }
     var showTestPlayer by remember { mutableStateOf(false) }
+
+    // Delad SearchViewModel så Home kan visa senaste feed
+    val context = LocalContext.current
+    val searchViewModel: SearchViewModel = viewModel(
+        factory = SearchViewModelFactory(context.applicationContext as Application)
+    )
 
     if (showTestPlayer) {
         VideoPlayerScreen(
@@ -86,8 +95,14 @@ fun VaultScreen(
                 DecoyContent(onLock = onLock)
             } else {
                 when (currentTab) {
-                    VaultTab.HOME -> HomeTab(onLock = onLock, onPlayTest = { showTestPlayer = true })
-                    VaultTab.SEARCH -> SearchTab()
+                    VaultTab.HOME -> HomeTab(
+                        onLock = onLock,
+                        onPlayTest = { showTestPlayer = true },
+                        feed = searchViewModel.lastFeed,
+                        onFavorite = { searchViewModel.addFavorite(it) },
+                        onWatchLater = { searchViewModel.addWatchLater(it) }
+                    )
+                    VaultTab.SEARCH -> SearchTab(viewModel = searchViewModel)
                     VaultTab.LIBRARY -> LibraryTab()
                     VaultTab.SETTINGS -> SettingsTab(onLock = onLock)
                 }
@@ -118,12 +133,17 @@ private fun RowScope.VaultNavItem(
     )
 }
 
+/* ==================== HOME / FEED ==================== */
+
 @Composable
-private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+private fun HomeTab(
+    onLock: () -> Unit,
+    onPlayTest: () -> Unit,
+    feed: List<SearchResult>,
+    onFavorite: (SearchResult) -> Unit,
+    onWatchLater: (SearchResult) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -134,44 +154,106 @@ private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
                 Icon(Icons.Default.Lock, "Lås", tint = Color(0xFFFF5252))
             }
         }
-        Spacer(modifier = Modifier.height(24.dp))
+
+        Spacer(modifier = Modifier.height(12.dp))
         TestPlayerButton(onPlayTest = onPlayTest)
-        Spacer(modifier = Modifier.height(24.dp))
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("On-device AI-sök aktiv", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "Skriv naturligt språk, t.ex.:\n\"brunette pov slow, no anal, no rough\"\n\nAppen tolkar positivt/negativt lokalt och filtrerar automatiskt.",
-                    color = Color(0xFF90A4AE),
-                    fontSize = 14.sp
-                )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (feed.isEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Ingen feed ännu", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Gör en sökning i Search-fliken. Resultaten dyker sedan upp här som din personliga feed.",
+                        color = Color(0xFF90A4AE),
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        } else {
+            Text(
+                "Senaste sökning (${feed.size} st)",
+                color = Color(0xFFB0BEC5),
+                fontSize = 14.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(feed) { result ->
+                    FeedCard(
+                        result = result,
+                        onFavorite = { onFavorite(result) },
+                        onWatchLater = { onWatchLater(result) }
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SearchTab() {
-    val context = LocalContext.current
-    val viewModel: SearchViewModel = viewModel(
-        factory = SearchViewModelFactory(context.applicationContext as Application)
-    )
-
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Search", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Huvudsökfält – naturligt språk
+private fun FeedCard(
+    result: SearchResult,
+    onFavorite: () -> Unit,
+    onWatchLater: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            AsyncImage(
+                model = result.thumbnailUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .width(110.dp)
+                    .height(68.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF2A2A4A))
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    result.title,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(result.sourceSite, color = Color(0xFF00E676), fontSize = 11.sp)
+            }
+            Column {
+                IconButton(onClick = onFavorite, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.Favorite, "Favorit", tint = Color(0xFFFF4081), modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onWatchLater, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.WatchLater, "Senare", tint = Color(0xFF64B5F6), modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+    }
+}
+
+/* ==================== SEARCH ==================== */
+
+@Composable
+private fun SearchTab(viewModel: SearchViewModel) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Search", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = viewModel.query,
                 onValueChange = { viewModel.onQueryChange(it) },
@@ -205,12 +287,11 @@ private fun SearchTab() {
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Extra manuella negativa filter
         OutlinedTextField(
             value = viewModel.negativeKeywords,
             onValueChange = { viewModel.onNegativeKeywordsChange(it) },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Extra exkludera (valfritt): rough, tattoo...", color = Color(0xFF78909C)) },
+            placeholder = { Text("Extra exkludera (valfritt)", color = Color(0xFF78909C)) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Color(0xFFFF5252),
                 unfocusedBorderColor = Color(0xFF37474F),
@@ -222,14 +303,9 @@ private fun SearchTab() {
             singleLine = true
         )
 
-        // AI-förklaring
-        viewModel.aiExplanation?.let { explanation ->
+        viewModel.aiExplanation?.let {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = explanation,
-                color = Color(0xFF80CBC4),
-                fontSize = 12.sp
-            )
+            Text(it, color = Color(0xFF80CBC4), fontSize = 12.sp)
         }
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -241,18 +317,17 @@ private fun SearchTab() {
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        viewModel.errorMessage?.let { msg ->
-            Text(msg, color = Color(0xFFFF8A80), fontSize = 14.sp)
+        viewModel.errorMessage?.let {
+            Text(it, color = Color(0xFFFF8A80), fontSize = 14.sp)
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
             items(viewModel.results) { result ->
                 SearchResultCard(
                     result = result,
+                    onFavorite = { viewModel.addFavorite(result) },
+                    onWatchLater = { viewModel.addWatchLater(result) },
                     onNeverShow = { viewModel.addNeverShowAgain(it) }
                 )
             }
@@ -263,6 +338,8 @@ private fun SearchTab() {
 @Composable
 private fun SearchResultCard(
     result: SearchResult,
+    onFavorite: () -> Unit,
+    onWatchLater: () -> Unit,
     onNeverShow: (String) -> Unit
 ) {
     Card(
@@ -279,17 +356,15 @@ private fun SearchResultCard(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .width(110.dp)
-                    .height(68.dp)
+                    .width(100.dp)
+                    .height(64.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF2A2A4A))
             )
-
             Spacer(modifier = Modifier.width(10.dp))
-
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = result.title,
+                    result.title,
                     color = Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
@@ -297,66 +372,154 @@ private fun SearchResultCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row {
                     result.duration?.let {
                         Text(it, color = Color(0xFF90A4AE), fontSize = 11.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                     }
-                    Text(
-                        result.sourceSite,
-                        color = Color(0xFF00E676),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Text(result.sourceSite, color = Color(0xFF00E676), fontSize = 11.sp)
+                }
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(onClick = onFavorite, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Favorite, null, tint = Color(0xFFFF4081), modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = onWatchLater, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.WatchLater, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(18.dp))
+                }
+                IconButton(
+                    onClick = {
+                        val word = result.title.split(" ")
+                            .map { it.trim().lowercase() }
+                            .firstOrNull { it.length > 3 } ?: result.title.take(12)
+                        onNeverShow(word)
+                    },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(Icons.Default.Block, null, tint = Color(0xFFFF5252), modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+}
+
+/* ==================== LIBRARY ==================== */
+
+@Composable
+private fun LibraryTab() {
+    val context = LocalContext.current
+    val viewModel: LibraryViewModel = viewModel(
+        factory = LibraryViewModelFactory(context.applicationContext as Application)
+    )
+
+    var section by remember { mutableStateOf(LibrarySection.OVERVIEW) }
+
+    val favCount by viewModel.favoriteCount.collectAsState()
+    val laterCount by viewModel.watchLaterCount.collectAsState()
+    val dislikeCount by viewModel.dislikeCount.collectAsState()
+    val favorites by viewModel.favorites.collectAsState()
+    val watchLater by viewModel.watchLater.collectAsState()
+    val rules by viewModel.dislikeRules.collectAsState()
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Library", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        when (section) {
+            LibrarySection.OVERVIEW -> {
+                LibraryOverviewItem("Favoriter", "$favCount videor", Color(0xFFFF4081)) {
+                    section = LibrarySection.FAVORITES
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                LibraryOverviewItem("Watch Later", "$laterCount videor", Color(0xFF64B5F6)) {
+                    section = LibrarySection.WATCH_LATER
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                LibraryOverviewItem("Never Show Again", "$dislikeCount regler", Color(0xFFFF5252)) {
+                    section = LibrarySection.DISLIKES
                 }
             }
 
-            IconButton(
-                onClick = {
-                    val word = result.title.split(" ")
-                        .map { it.trim().lowercase() }
-                        .firstOrNull { it.length > 3 } ?: result.title.take(12)
-                    onNeverShow(word)
+            LibrarySection.FAVORITES -> {
+                TextButton(onClick = { section = LibrarySection.OVERVIEW }) {
+                    Text("← Tillbaka", color = Color(0xFF90A4AE))
                 }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Block,
-                    contentDescription = "Never show",
-                    tint = Color(0xFFFF5252),
-                    modifier = Modifier.size(20.dp)
-                )
+                Spacer(modifier = Modifier.height(8.dp))
+                if (favorites.isEmpty()) {
+                    Text("Inga favoriter ännu", color = Color(0xFF90A4AE))
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(favorites) { video ->
+                            VideoEntityCard(video) {
+                                viewModel.removeFavorite(video.id)
+                            }
+                        }
+                    }
+                }
+            }
+
+            LibrarySection.WATCH_LATER -> {
+                TextButton(onClick = { section = LibrarySection.OVERVIEW }) {
+                    Text("← Tillbaka", color = Color(0xFF90A4AE))
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                if (watchLater.isEmpty()) {
+                    Text("Inget i Watch Later", color = Color(0xFF90A4AE))
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(watchLater) { video ->
+                            VideoEntityCard(video) {
+                                viewModel.removeWatchLater(video.id)
+                            }
+                        }
+                    }
+                }
+            }
+
+            LibrarySection.DISLIKES -> {
+                TextButton(onClick = { section = LibrarySection.OVERVIEW }) {
+                    Text("← Tillbaka", color = Color(0xFF90A4AE))
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                if (rules.isEmpty()) {
+                    Text("Inga regler ännu", color = Color(0xFF90A4AE))
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(rules) { rule ->
+                            DislikeRuleCard(rule) {
+                                viewModel.removeDislikeRule(rule)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun LibraryTab() {
-    Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-        Text("Library", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(24.dp))
-        LibraryItem("Favoriter", "0 videor")
-        Spacer(modifier = Modifier.height(12.dp))
-        LibraryItem("Watch Later", "0 videor")
-        Spacer(modifier = Modifier.height(12.dp))
-        LibraryItem("Never Show Again", "Regler sparas i databasen")
-        Spacer(modifier = Modifier.height(12.dp))
-        LibraryItem("Sparade sökningar", "0 presets")
-    }
-}
-
-@Composable
-private fun LibraryItem(title: String, subtitle: String) {
+private fun LibraryOverviewItem(
+    title: String,
+    subtitle: String,
+    accent: Color,
+    onClick: () -> Unit
+) {
     Card(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(accent, RoundedCornerShape(4.dp))
+            )
+            Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 Text(subtitle, color = Color(0xFF90A4AE), fontSize = 13.sp)
@@ -364,6 +527,70 @@ private fun LibraryItem(title: String, subtitle: String) {
         }
     }
 }
+
+@Composable
+private fun VideoEntityCard(video: VideoEntity, onRemove: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AsyncImage(
+                model = video.thumbnailUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .width(100.dp)
+                    .height(60.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF2A2A4A))
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    video.title,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(video.sourceSite, color = Color(0xFF00E676), fontSize = 11.sp)
+            }
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Delete, "Ta bort", tint = Color(0xFFFF5252))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DislikeRuleCard(rule: DislikeRuleEntity, onRemove: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(rule.value, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text(rule.type, color = Color(0xFF90A4AE), fontSize = 12.sp)
+            }
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Delete, "Ta bort", tint = Color(0xFFFF5252))
+            }
+        }
+    }
+}
+
+/* ==================== SETTINGS & DECOY ==================== */
 
 @Composable
 private fun SettingsTab(onLock: () -> Unit) {
@@ -375,8 +602,6 @@ private fun SettingsTab(onLock: () -> Unit) {
         SettingsItem("Decoy-PIN", "Ändra den falska koden")
         Spacer(modifier = Modifier.height(12.dp))
         SettingsItem("Biometri", "Kräv fingeravtryck/ansikte")
-        Spacer(modifier = Modifier.height(12.dp))
-        SettingsItem("Exkluderingsregler", "Hantera Never-show-regler")
         Spacer(modifier = Modifier.height(32.dp))
         Button(
             onClick = onLock,

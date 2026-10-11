@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.calculator.app.ai.QueryExpander
 import com.calculator.app.data.Repository
+import com.calculator.app.data.entity.VideoEntity
 import com.calculator.app.data.extractor.MultiSiteSearcher
 import com.calculator.app.data.model.SearchResult
 import kotlinx.coroutines.flow.first
@@ -17,7 +18,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     private val searcher = MultiSiteSearcher()
     private val repository = Repository(application)
-    private val expander = QueryExpander()          // On-device lättvikts-AI
+    private val expander = QueryExpander()
 
     var query by mutableStateOf("")
         private set
@@ -31,12 +32,14 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
-    // Tillfälliga negativa nyckelord från UI
     var negativeKeywords by mutableStateOf("")
         private set
 
-    // Förklaring från expandern (visas för användaren)
     var aiExplanation by mutableStateOf<String?>(null)
+        private set
+
+    // Senaste sökresultat sparas som "feed" för Home
+    var lastFeed by mutableStateOf<List<SearchResult>>(emptyList())
         private set
 
     val supportedSites: List<String> = searcher.getSupportedSites()
@@ -59,41 +62,44 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             aiExplanation = null
 
             try {
-                // === 1. On-device expansion ===
                 val expanded = expander.expand(query)
                 aiExplanation = expanded.explanation
 
-                val searchTerms = expanded.searchTerms
+                val raw = searcher.search(expanded.searchTerms)
 
-                // === 2. Hämta rådata ===
-                val raw = searcher.search(searchTerms)
-
-                // === 3. Samla alla negativa regler ===
                 val blocked = mutableSetOf<String>()
-
-                // Från AI-expandern
                 expanded.negativeKeywords.forEach { blocked.add(it.lowercase()) }
-
-                // Från UI-fältet
-                negativeKeywords
-                    .split(",", "\n")
+                negativeKeywords.split(",", "\n")
                     .map { it.trim().lowercase() }
                     .filter { it.isNotBlank() }
                     .forEach { blocked.add(it) }
 
-                // Från databasen (permanenta Never-show-regler)
                 val rules = repository.getDislikeRules().first()
-                rules
-                    .filter { it.type == "keyword" || it.type == "tag" }
+                rules.filter { it.type == "keyword" || it.type == "tag" }
                     .forEach { blocked.add(it.value.lowercase()) }
 
-                // === 4. Filtrera ===
                 val filtered = raw.filter { result ->
                     val titleLower = result.title.lowercase()
                     blocked.none { bad -> titleLower.contains(bad) }
                 }
 
                 results = filtered
+                lastFeed = filtered   // Uppdatera feed för Home
+
+                // Spara metadata i databasen så Library kan använda den
+                filtered.take(30).forEach { r ->
+                    repository.insertVideo(
+                        VideoEntity(
+                            id = r.id,
+                            title = r.title,
+                            thumbnailUrl = r.thumbnailUrl,
+                            durationSeconds = null,
+                            sourceSite = r.sourceSite,
+                            detailPageUrl = r.detailUrl,
+                            tags = ""
+                        )
+                    )
+                }
 
                 if (results.isEmpty()) {
                     errorMessage = if (raw.isEmpty()) {
@@ -108,6 +114,37 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             } finally {
                 isLoading = false
             }
+        }
+    }
+
+    fun addFavorite(result: SearchResult) {
+        viewModelScope.launch {
+            // Se till att videon finns i videos-tabellen
+            repository.insertVideo(
+                VideoEntity(
+                    id = result.id,
+                    title = result.title,
+                    thumbnailUrl = result.thumbnailUrl,
+                    sourceSite = result.sourceSite,
+                    detailPageUrl = result.detailUrl
+                )
+            )
+            repository.addFavorite(result.id)
+        }
+    }
+
+    fun addWatchLater(result: SearchResult) {
+        viewModelScope.launch {
+            repository.insertVideo(
+                VideoEntity(
+                    id = result.id,
+                    title = result.title,
+                    thumbnailUrl = result.thumbnailUrl,
+                    sourceSite = result.sourceSite,
+                    detailPageUrl = result.detailUrl
+                )
+            )
+            repository.addWatchLater(result.id)
         }
     }
 
