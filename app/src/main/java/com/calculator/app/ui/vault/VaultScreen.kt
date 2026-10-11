@@ -1,7 +1,10 @@
 package com.calculator.app.ui.vault
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -13,15 +16,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.calculator.app.data.model.SearchResult
 import com.calculator.app.ui.player.TestPlayerButton
 import com.calculator.app.ui.player.VideoPlayerScreen
+import com.calculator.app.ui.search.SearchViewModel
 
 enum class VaultTab {
     HOME, SEARCH, LIBRARY, SETTINGS
@@ -35,7 +45,6 @@ fun VaultScreen(
     var currentTab by remember { mutableStateOf(VaultTab.HOME) }
     var showTestPlayer by remember { mutableStateOf(false) }
 
-    // Om test-player är aktiv → visa den fullskärm
     if (showTestPlayer) {
         VideoPlayerScreen(
             videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
@@ -55,10 +64,7 @@ fun VaultScreen(
         containerColor = Color.Transparent,
         bottomBar = {
             if (!isDecoy) {
-                NavigationBar(
-                    containerColor = Color(0xFF1A1A2E),
-                    contentColor = Color.White
-                ) {
+                NavigationBar(containerColor = Color(0xFF1A1A2E), contentColor = Color.White) {
                     VaultNavItem(Icons.Default.Home, "Home", currentTab == VaultTab.HOME) { currentTab = VaultTab.HOME }
                     VaultNavItem(Icons.Default.Search, "Search", currentTab == VaultTab.SEARCH) { currentTab = VaultTab.SEARCH }
                     VaultNavItem(Icons.Default.VideoLibrary, "Library", currentTab == VaultTab.LIBRARY) { currentTab = VaultTab.LIBRARY }
@@ -77,10 +83,7 @@ fun VaultScreen(
                 DecoyContent(onLock = onLock)
             } else {
                 when (currentTab) {
-                    VaultTab.HOME -> HomeTab(
-                        onLock = onLock,
-                        onPlayTest = { showTestPlayer = true }
-                    )
+                    VaultTab.HOME -> HomeTab(onLock = onLock, onPlayTest = { showTestPlayer = true })
                     VaultTab.SEARCH -> SearchTab()
                     VaultTab.LIBRARY -> LibraryTab()
                     VaultTab.SETTINGS -> SettingsTab(onLock = onLock)
@@ -115,9 +118,7 @@ private fun RowScope.VaultNavItem(
 @Composable
 private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
+        modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -130,14 +131,9 @@ private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
                 Icon(Icons.Default.Lock, "Lås", tint = Color(0xFFFF5252))
             }
         }
-
         Spacer(modifier = Modifier.height(24.dp))
-
-        // Test-knapp för videoplayer
         TestPlayerButton(onPlayTest = onPlayTest)
-
         Spacer(modifier = Modifier.height(24.dp))
-
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
@@ -147,7 +143,7 @@ private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
                 Text("Home / Discover", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Här kommer AI-rekommendationer och det gemensamma flödet att visas.\n\nTryck på knappen ovan för att testa videoplayern.",
+                    "Gå till Search-fliken och sök för att hämta riktiga resultat från Eporner.",
                     color = Color(0xFF90A4AE),
                     fontSize = 14.sp
                 )
@@ -157,31 +153,125 @@ private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
 }
 
 @Composable
-private fun SearchTab() {
-    Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+private fun SearchTab(
+    viewModel: SearchViewModel = viewModel()
+) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Search", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(24.dp))
-        OutlinedTextField(
-            value = "",
-            onValueChange = {},
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Beskriv vad du vill se...", color = Color(0xFF78909C)) },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFF00E676),
-                unfocusedBorderColor = Color(0xFF37474F),
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                cursorColor = Color(0xFF00E676)
-            ),
-            shape = RoundedCornerShape(12.dp),
-            singleLine = true
-        )
+
         Spacer(modifier = Modifier.height(16.dp))
+
+        // Sökfält + knapp
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = viewModel.query,
+                onValueChange = { viewModel.onQueryChange(it) },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Sök...", color = Color(0xFF78909C)) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFF00E676),
+                    unfocusedBorderColor = Color(0xFF37474F),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Color(0xFF00E676)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = { viewModel.search() },
+                enabled = !viewModel.isLoading && viewModel.query.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.height(56.dp)
+            ) {
+                if (viewModel.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.Black,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Sök", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
-            "Exempel: brunette in kitchen, POV, slow, no anal, only amateur",
-            color = Color(0xFF607D8B),
-            fontSize = 13.sp
+            "Källa just nu: Eporner", color = Color(0xFF607D8B), fontSize = 12.sp
         )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Felmeddelande
+        viewModel.errorMessage?.let { msg ->
+            Text(msg, color = Color(0xFFFF8A80), fontSize = 14.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        // Resultatlista
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(viewModel.results) { result ->
+                SearchResultCard(result)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchResultCard(result: SearchResult) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Thumbnail
+            AsyncImage(
+                model = result.thumbnailUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .width(120.dp)
+                    .height(70.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF2A2A4A))
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = result.title,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row {
+                    result.duration?.let {
+                        Text(it, color = Color(0xFF90A4AE), fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(result.sourceSite, color = Color(0xFF00E676), fontSize = 12.sp)
+                }
+            }
+        }
     }
 }
 
