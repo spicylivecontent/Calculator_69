@@ -3,31 +3,31 @@
 Diskret miniräknar-app
 
 ## Status
-- ✅ Steg 1–12
-- ✅ Steg 13: Unified Feed + Library + Favoriter
+- ✅ Steg 1–13
+- ✅ Steg 14: Reklamblockering & nätverkssäkerhet
 
-## Steg 13 – Vad som lagts till
+## Steg 14 – Nätverkssäkerhet
 
-### Home / Discover (Unified Feed)
-- Visar resultatet från din senaste sökning som en personlig feed
-- Knappar för **Favorit** (rosa) och **Watch Later** (blå)
+### AdBlockInterceptor
+Blockerar kända reklam- och trackingdomäner (DoubleClick, JuicyAds, ExoClick, Google Analytics, Facebook Pixel, m.fl.).
+Requests till dessa hostar når aldrig nätverket.
 
-### Search
-- Favorit / Watch Later / Never-show på varje resultat
-- Sparar metadata automatiskt till Room-databasen
+### PrivacyInterceptor
+- Tar bort tracking-queryparametrar (`utm_*`, `fbclid`, `gclid`, m.fl.)
+- Sätter `DNT: 1` och `Sec-GPC: 1`
+- Använder en generisk mobil User-Agent
+- Tar bort WebView-signaturer
 
-### Library (riktig data)
-| Sektion | Funktion |
-|---------|----------|
-| Favoriter | Visar sparade favoriter, kan ta bort |
-| Watch Later | Visar sparade, kan ta bort |
-| Never Show Again | Visar alla permanenta filterregler, kan ta bort |
+### Network security
+- `usesCleartextTraffic="false"` – endast HTTPS
+- Egen `network_security_config.xml`
+- Delad `NetworkClient` används av alla extractors
 
-Antarna uppdateras live.
+Eftersom appen **inte** laddar webbsidor i en WebView utan bara hämtar HTML för parsing och spelar rena stream-URL:er, syns nästan ingen reklam i praktiken. Interceptorerna är ändå ett extra skydd.
 
 ## PIN-koder
 - **6969** + biometri → Riktiga vaulten
 - **1234** → Decoy-vault
 
 ## Nästa steg
-Steg 14: Reklamblockering & nätverkssäkerhet (eller polering)
+Steg 15: Polering, stream-extract (spela riktiga videor) & slutfinish
