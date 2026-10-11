@@ -3,25 +3,30 @@
 Diskret miniräknar-app
 
 ## Status
-- ✅ Steg 1–8: Setup → Videoplayer
-- ✅ Steg 9: Första datahämtning (Eporner)
+- ✅ Steg 1–9: Setup → Första datahämtning
+- ✅ Steg 10: Multi-site scraping
 
-## Sök (Steg 9)
+## Multi-site sök (Steg 10)
 
-- Sök i **Search**-fliken
-- Hämtar resultat live från **Eporner**
-- Visar thumbnail, titel, längd och källa
-- OkHttp + Jsoup (open source)
+Sökningen hämtar nu parallellt från:
 
-### Testa sök
+| Sajt | Status |
+|------|--------|
+| Eporner | ✅ |
+| SpankBang | ✅ |
+| HQporner | ✅ |
+
+Resultaten blandas (round-robin) så att ingen enskild sajt dominerar listan.
+
+### Testa
 1. Lås upp med **6969** + biometri
 2. Gå till **Search**
-3. Skriv t.ex. `amateur` eller `blonde` och tryck Sök
-4. Resultat ska dyka upp med thumbnails
+3. Skriv en sökterm och tryck Sök
+4. Du ska se resultat från flera källor (källnamnet visas grönt under varje titel)
 
 ## PIN-koder
 - **6969** + biometri → Riktiga vaulten
 - **1234** → Decoy-vault
 
 ## Nästa steg
-Steg 10: Multi-site scraping (lägg till fler sajter)
+Steg 11: Avancerad filtrering (positiva + negativa regler)

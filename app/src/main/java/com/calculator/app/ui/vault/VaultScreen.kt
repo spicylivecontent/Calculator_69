@@ -1,7 +1,6 @@
 package com.calculator.app.ui.vault
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -140,10 +139,10 @@ private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Text("Home / Discover", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("Multi-site sök aktiv", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Gå till Search-fliken och sök för att hämta riktiga resultat från Eporner.",
+                    "Sökningen hämtar nu från:\n• Eporner\n• SpankBang\n• HQporner\n\nGå till Search-fliken och prova.",
                     color = Color(0xFF90A4AE),
                     fontSize = 14.sp
                 )
@@ -153,15 +152,12 @@ private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
 }
 
 @Composable
-private fun SearchTab(
-    viewModel: SearchViewModel = viewModel()
-) {
+private fun SearchTab(viewModel: SearchViewModel = viewModel()) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Search", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Sökfält + knapp
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -170,7 +166,7 @@ private fun SearchTab(
                 value = viewModel.query,
                 onValueChange = { viewModel.onQueryChange(it) },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Sök...", color = Color(0xFF78909C)) },
+                placeholder = { Text("Sök på flera sajter...", color = Color(0xFF78909C)) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFF00E676),
                     unfocusedBorderColor = Color(0xFF37474F),
@@ -190,31 +186,27 @@ private fun SearchTab(
                 modifier = Modifier.height(56.dp)
             ) {
                 if (viewModel.isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color.Black,
-                        strokeWidth = 2.dp
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.Black, strokeWidth = 2.dp)
                 } else {
                     Text("Sök", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
-            "Källa just nu: Eporner", color = Color(0xFF607D8B), fontSize = 12.sp
+            "Källor: ${viewModel.supportedSites.joinToString(", ")}",
+            color = Color(0xFF607D8B),
+            fontSize = 12.sp
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Felmeddelande
         viewModel.errorMessage?.let { msg ->
             Text(msg, color = Color(0xFFFF8A80), fontSize = 14.sp)
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        // Resultatlista
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxSize()
@@ -234,12 +226,9 @@ private fun SearchResultCard(result: SearchResult) {
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
+            modifier = Modifier.fillMaxWidth().padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Thumbnail
             AsyncImage(
                 model = result.thumbnailUrl,
                 contentDescription = null,
@@ -268,7 +257,12 @@ private fun SearchResultCard(result: SearchResult) {
                         Text(it, color = Color(0xFF90A4AE), fontSize = 12.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                     }
-                    Text(result.sourceSite, color = Color(0xFF00E676), fontSize = 12.sp)
+                    Text(
+                        result.sourceSite,
+                        color = Color(0xFF00E676),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
