@@ -1,26 +1,23 @@
 # Calculator
 
-Diskret miniräknar-app (personlig användning)
+Diskret miniraknar-app (personlig anvandning)
 
-## Status: Steg 1–15 + build-fixar
+## Bygg APK via GitHub Actions
 
-### Bygg i Android Studio
-1. Clone / öppna projektet
-2. Låt Gradle sync (wrapper props finns; Studio genererar `gradlew` om det saknas)
-3. Build → Build Bundle(s) / APK(s) → Build APK(s)
+1. Ga till **Actions**-fliken i repot
+2. Valj workflow **Build APK**
+3. Vanta tills jobbet ar gront
+4. Ladda ner artifacten **Calculator-debug-apk**
+5. Packa upp och installera `app-debug.apk` pa telefonen
 
-Eller terminal (efter att Studio skapat wrapper):
-```bash
-./gradlew assembleDebug
-```
-APK: `app/build/outputs/apk/debug/app-debug.apk`
+Workflow kors automatiskt vid varje push till `main`, eller manuellt via **Run workflow**.
 
 ### PIN
-- **6969** + biometri → Vault
-- **1234** → Decoy
+- **6969** + biometri = Vault
+- **1234** = Decoy
 
 ### 10 sajter
 Eporner, SpankBang, HQporner, XVideos, XNXX, xHamster, Pornhub, Beeg, YouPorn, PornTrex
 
 ### Viktigt
-Scraping/stream är best-effort. Testa först Eporner och XVideos.
+Scraping/stream ar best-effort. Testa forst Eporner och XVideos.
