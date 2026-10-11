@@ -6,30 +6,95 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
-import org.jsoup.Jsoup
-import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import java.util.regex.Pattern
+
+/** En verifierad, spelbar ström med information om kvaliteten. */
+data class ResolvedStream(
+    val url: String,
+    val referer: String?,
+    val isHls: Boolean,
+    val maxHeight: Int?,
+    val bandwidth: Int?,
+    val qualityLabel: String?
+) {
+    val isAdaptive: Boolean get() = isHls
+}
 
 /**
- * Extracts and validates a direct HTTPS media URL from a site's detail page.
- * The stream probe uses a tiny ranged request so search never downloads the video itself.
+ * Hämtar en direkt mediaström från en sajts detaljsida och kontrollerar att den
+ * verkligen svarar som video/HLS. Resultatet cachas kort så att upprepade
+ * sökningar och uppspelning går snabbt.
  */
 object StreamResolver {
 
-    suspend fun resolve(
+    private const val DETAIL_TIMEOUT_MS = 7_000L
+    private const val PROBE_TIMEOUT_MS = 4_500L
+    private const val CACHE_TTL_MS = 20L * 60L * 1000L
+    private const val MAX_CANDIDATES_TO_PROBE = 6
+    private const val MAX_HLS_BYTES = 512 * 1024
+    private const val RANGE_PROBE_BYTES = "bytes=0-2047"
+
+    private const val PLAYER_USER_AGENT =
+        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+
+    private data class CacheEntry(val stream: ResolvedStream, val expiresAt: Long)
+
+    private val cache = ConcurrentHashMap<String, CacheEntry>()
+
+    fun cached(detailUrl: String): ResolvedStream? {
+        val entry = cache[detailUrl] ?: return null
+        if (entry.expiresAt < System.currentTimeMillis()) {
+            cache.remove(detailUrl)
+            return null
+        }
+        return entry.stream
+    }
+
+    fun remember(detailUrl: String, stream: ResolvedStream) {
+        if (cache.size > MAX_CACHE_ENTRIES) cache.clear()
+        cache[detailUrl] = CacheEntry(stream, System.currentTimeMillis() + CACHE_TTL_MS)
+    }
+
+    fun invalidate(detailUrl: String? = null) {
+        if (detailUrl == null) cache.clear() else cache.remove(detailUrl)
+    }
+
+    /** Löser ut en stream och bekräftar att den svarar som spelbar media. */
+    suspend fun resolvePlayable(
         detailUrl: String,
         sourceSite: String,
-        timeoutMillis: Long = DEFAULT_REQUEST_TIMEOUT_MS
-    ): String? = withContext(Dispatchers.IO) {
+        forceRefresh: Boolean = false
+    ): ResolvedStream? {
+        if (detailUrl.isBlank()) return null
+        val cachedStream = if (forceRefresh) null else cached(detailUrl)
+        if (cachedStream != null && isPlayable(cachedStream.url, cachedStream.referer ?: detailUrl)) {
+            return cachedStream
+        }
+        if (cachedStream != null) cache.remove(detailUrl)
+
+        val resolved = resolve(detailUrl, sourceSite) ?: return null
+        if (isPlayable(resolved.url, resolved.referer ?: detailUrl)) {
+            remember(detailUrl, resolved)
+            return resolved
+        }
+        return null
+    }
+
+    /** Löser ut bästa kandidat utan att göra en extra probe (probe görs ändå i [resolvePlayable]). */
+    suspend fun resolve(detailUrl: String, sourceSite: String): ResolvedStream? = withContext(Dispatchers.IO) {
         try {
-            val candidate = when (sourceSite.lowercase(Locale.ROOT)) {
-                "eporner" -> resolveEporner(detailUrl, timeoutMillis)
-                "spankbang", "hqporner" -> resolveGeneric(detailUrl, timeoutMillis)
-                "xvideos", "xnxx" -> resolveXVideosFamily(detailUrl, timeoutMillis)
-                else -> resolveGeneric(detailUrl, timeoutMillis)
+            val html = fetchDetail(detailUrl, sourceSite) ?: return@withContext null
+            val candidates = LinkedHashSet<String>()
+            candidates.addAll(StreamSelection.extractCandidates(html, detailUrl))
+            candidates.addAll(siteSpecificCandidates(sourceSite, detailUrl))
+
+            val ranked = StreamSelection.rankCandidates(candidates).take(MAX_CANDIDATES_TO_PROBE)
+            for (candidate in ranked) {
+                val resolved = inspect(candidate, detailUrl) ?: continue
+                return@withContext resolved.also { remember(detailUrl, it) }
             }
-            validateStreamUrl(candidate)
+            null
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -37,64 +102,110 @@ object StreamResolver {
         }
     }
 
-    /** Resolves a stream and confirms it responds like playable MP4/HLS media. */
-    suspend fun resolvePlayable(
-        detailUrl: String,
-        sourceSite: String,
-        detailTimeoutMillis: Long = VERIFY_DETAIL_TIMEOUT_MS,
-        probeTimeoutMillis: Long = VERIFY_PROBE_TIMEOUT_MS
-    ): String? {
-        val streamUrl = resolve(detailUrl, sourceSite, detailTimeoutMillis) ?: return null
-        return if (isPlayable(streamUrl, detailUrl, probeTimeoutMillis)) streamUrl else null
+    private fun siteSpecificCandidates(sourceSite: String, detailUrl: String): List<String> {
+        if (sourceSite.lowercase() != "beeg") return emptyList()
+        val id = detailUrl.trimEnd('/').substringAfterLast('/').substringBefore('?')
+        if (id.isBlank() || !id.all { it.isDigit() }) return emptyList()
+        val json = Fetch.pageBlocking("https://api.beeg.com/api/v6/video/$id?v=2", timeoutMs = DETAIL_TIMEOUT_MS)
+            ?: return emptyList()
+        return StreamSelection.extractCandidates(json, detailUrl)
     }
 
-    /** Checks a direct URL with an HTTPS-only, small byte-range request. */
+    private fun fetchDetail(detailUrl: String, sourceSite: String): String? {
+        val html = Fetch.pageBlocking(detailUrl, timeoutMs = DETAIL_TIMEOUT_MS) ?: return null
+        if (StreamSelection.looksRemoved(html)) return null
+        return html
+    }
+
+    private fun inspect(url: String, referer: String?): ResolvedStream? {
+        val probe = probe(url, referer) ?: return null
+        return if (probe.isHls) {
+            val manifest = fetchManifest(url, referer) ?: return null
+            if (!StreamSelection.looksLikeHlsPlaylist(manifest)) return null
+            val best = StreamSelection.bestVariant(manifest, url)
+            val height = best?.height ?: StreamSelection.qualityFromUrl(url)
+            ResolvedStream(
+                url = url,
+                referer = referer,
+                isHls = true,
+                maxHeight = height,
+                bandwidth = best?.bandwidth,
+                qualityLabel = StreamSelection.qualityLabel(height)?.let { "upp till $it" } ?: "Adaptiv"
+            )
+        } else {
+            val height = StreamSelection.qualityFromUrl(url)
+            ResolvedStream(
+                url = url,
+                referer = referer,
+                isHls = false,
+                maxHeight = height,
+                bandwidth = null,
+                qualityLabel = StreamSelection.qualityLabel(height)
+            )
+        }
+    }
+
+    private data class ProbeResult(val isHls: Boolean, val contentType: String?)
+
+    private fun probe(url: String, referer: String?): ProbeResult? {
+        val parsed = url.toHttpUrlOrNull() ?: return null
+        if (!parsed.isHttps) return null
+
+        val builder = Request.Builder()
+            .url(parsed)
+            .header("Range", RANGE_PROBE_BYTES)
+            .get()
+        applyMediaHeaders(builder, referer)
+
+        val call = NetworkClient.client.newCall(builder.build())
+        call.timeout().timeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        return try {
+            call.execute().use { response ->
+                if (!response.isSuccessful) return null
+                val contentType = response.body?.contentType()?.toString()
+                val isHls = StreamSelection.isHls(url) ||
+                    contentType?.contains("mpegurl", ignoreCase = true) == true
+                if (!StreamSelection.isPlayableContentType(contentType, url)) return null
+                ProbeResult(isHls = isHls, contentType = contentType)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun fetchManifest(url: String, referer: String?): String? {
+        val parsed = url.toHttpUrlOrNull() ?: return null
+        if (!parsed.isHttps) return null
+        val builder = Request.Builder().url(parsed).get()
+        applyMediaHeaders(builder, referer)
+        val call = NetworkClient.client.newCall(builder.build())
+        call.timeout().timeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        return try {
+            call.execute().use { response ->
+                if (!response.isSuccessful) return null
+                val body = response.body ?: return null
+                val length = body.contentLength()
+                if (length > MAX_HLS_BYTES) return null
+                body.string()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Snabb kontroll att en stream svarar som spelbar media. */
     suspend fun isPlayable(
         streamUrl: String,
         refererUrl: String? = null,
-        timeoutMillis: Long = VERIFY_PROBE_TIMEOUT_MS
+        timeoutMillis: Long = PROBE_TIMEOUT_MS
     ): Boolean = withContext(Dispatchers.IO) {
+        if (streamUrl.isBlank()) return@withContext false
         try {
-            val parsedUrl = streamUrl.toHttpUrlOrNull() ?: return@withContext false
-            if (!parsedUrl.isHttps) return@withContext false
-
-            val requestBuilder = Request.Builder()
-                .url(parsedUrl)
-                .header("Range", "bytes=0-1023")
-                .get()
-            val parsedReferer = refererUrl?.toHttpUrlOrNull()
-            if (parsedReferer?.isHttps == true) {
-                requestBuilder.header("Referer", parsedReferer.toString())
-            }
-
-            val call = NetworkClient.client.newCall(requestBuilder.build())
-            call.timeout().timeout(timeoutMillis, TimeUnit.MILLISECONDS)
-            call.execute().use { response ->
-                val body = response.body ?: return@use false
-                if (!response.isSuccessful) return@use false
-
-                val contentType = body.contentType()?.toString()?.lowercase(Locale.ROOT).orEmpty()
-                val path = parsedUrl.encodedPath.lowercase(Locale.ROOT)
-                val isHls = path.endsWith(".m3u8") || contentType.contains("mpegurl")
-                if (contentType.contains("text/html") || contentType.contains("application/json")) {
-                    return@use false
-                }
-
-                if (isHls) {
-                    body.source().peek().readUtf8Line()
-                        ?.removePrefix("\uFEFF")
-                        ?.trim() == "#EXTM3U"
-                } else {
-                    val isTextResponse = contentType.startsWith("text/") ||
-                        contentType.contains("json") ||
-                        contentType.contains("xml")
-                    val hasMediaType = contentType.startsWith("video/") ||
-                        contentType.contains("octet-stream") ||
-                        contentType.isBlank()
-                    val looksLikeMp4 = path.endsWith(".mp4")
-                    body.contentLength() != 0L && !isTextResponse && (hasMediaType || looksLikeMp4)
-                }
-            }
+            val probe = probe(streamUrl, refererUrl)
+            if (probe == null) return@withContext false
+            if (!probe.isHls) return@withContext true
+            val manifest = fetchManifest(streamUrl, refererUrl)
+            StreamSelection.looksLikeHlsPlaylist(manifest)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -102,123 +213,20 @@ object StreamResolver {
         }
     }
 
-    private fun validateStreamUrl(candidate: String?): String? {
-        val rawUrl = candidate?.trim()?.replace("\\/", "/") ?: return null
-        val normalizedUrl = if (rawUrl.startsWith("//")) "https:$rawUrl" else rawUrl
-        val parsedUrl = normalizedUrl.toHttpUrlOrNull() ?: return null
-        return normalizedUrl.takeIf { parsedUrl.isHttps }
-    }
-
-    private fun fetchHtml(url: String, timeoutMillis: Long): String? {
-        val parsedUrl = url.toHttpUrlOrNull()?.takeIf { it.isHttps } ?: return null
-        val request = Request.Builder().url(parsedUrl).build()
-        val call = NetworkClient.client.newCall(request)
-        call.timeout().timeout(timeoutMillis, TimeUnit.MILLISECONDS)
-        call.execute().use { response ->
-            if (!response.isSuccessful) return null
-            return response.body?.string()
-        }
-    }
-
-    private fun resolveEporner(detailUrl: String, timeoutMillis: Long): String? {
-        val html = fetchHtml(detailUrl, timeoutMillis) ?: return null
-
-        // Prefer adaptive HLS, then fall back to progressive MP4.
-        val patterns = listOf(
-            Pattern.compile("""https?://[^\"'\s<>]+\.m3u8[^\"'\s<>]*""", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("""https?://[^\"'\s<>]+\.mp4[^\"'\s<>]*""", Pattern.CASE_INSENSITIVE),
-            Pattern.compile(
-                """[\"]src[\"]\s*:\s*[\"](https?://[^\"'\s<>]+\.(?:m3u8|mp4)[^\"'\s<>]*)[\"]""",
-                Pattern.CASE_INSENSITIVE
-            ),
-            Pattern.compile("""file\s*:\s*['\"](https?://[^'\"\s<>]+)['\"]""", Pattern.CASE_INSENSITIVE)
+    fun mediaHeaders(refererUrl: String?): Map<String, String> {
+        val referer = refererUrl?.toHttpUrlOrNull() ?: return emptyMap()
+        if (!referer.isHttps) return emptyMap()
+        return mapOf(
+            "Referer" to referer.toString(),
+            "Origin" to "${referer.scheme}://${referer.host}",
+            "User-Agent" to PLAYER_USER_AGENT
         )
-
-        for (pattern in patterns) {
-            val matcher = pattern.matcher(html)
-            while (matcher.find()) {
-                val url = if (matcher.groupCount() >= 1) matcher.group(1) else matcher.group()
-                if (url != null && (url.contains(".mp4", ignoreCase = true) || url.contains(".m3u8", ignoreCase = true))) {
-                    return url.replace("\\/", "/")
-                }
-            }
-        }
-
-        val jsonPattern = Pattern.compile(
-            """EP\.video\.player\s*=\s*(\{.*?\})""",
-            Pattern.DOTALL
-        )
-        val jsonMatcher = jsonPattern.matcher(html)
-        if (jsonMatcher.find()) {
-            val block = jsonMatcher.group(1) ?: return null
-            val mediaPattern = Pattern.compile(
-                """[\"](https?://[^\"'\s<>]+\.(?:m3u8|mp4)[^\"'\s<>]*)[\"]""",
-                Pattern.CASE_INSENSITIVE
-            )
-            val mediaMatcher = mediaPattern.matcher(block)
-            if (mediaMatcher.find()) return mediaMatcher.group(1)?.replace("\\/", "/")
-        }
-
-        return null
     }
 
-    private fun resolveXVideosFamily(detailUrl: String, timeoutMillis: Long): String? {
-        val html = fetchHtml(detailUrl, timeoutMillis) ?: return null
-
-        // The High source is intentionally searched before the Low fallback.
-        val patterns = listOf(
-            Pattern.compile("""(?:html5player\.)?setVideoUrlHigh\(['\"](https?://[^'\"\s<>]+)['\"]\)""", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("""(?:html5player\.)?setVideoUrlLow\(['\"](https?://[^'\"\s<>]+)['\"]\)""", Pattern.CASE_INSENSITIVE),
-            Pattern.compile(
-                """[\"]contentUrl[\"]\s*:\s*[\"](https?://[^\"'\s<>]+\.mp4[^\"'\s<>]*)[\"]""",
-                Pattern.CASE_INSENSITIVE
-            )
-        )
-
-        for (pattern in patterns) {
-            val matcher = pattern.matcher(html)
-            if (matcher.find()) return matcher.group(1)?.replace("\\/", "/")
-        }
-        return null
+    private fun applyMediaHeaders(builder: Request.Builder, referer: String?) {
+        for ((name, value) in mediaHeaders(referer)) builder.header(name, value)
+        builder.header("Accept", "*/*")
     }
 
-    private fun resolveGeneric(detailUrl: String, timeoutMillis: Long): String? {
-        val html = fetchHtml(detailUrl, timeoutMillis) ?: return null
-        val patterns = listOf(
-            Pattern.compile("""https?://[^\"'\s<>]+\.m3u8[^\"'\s<>]*""", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("""https?://[^\"'\s<>]+\.mp4[^\"'\s<>]*""", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("""[\"]file[\"]\s*:\s*[\"](https?://[^\"'\s<>]+)[\"]""", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("""[\"]source[\"]\s*:\s*[\"](https?://[^\"'\s<>]+)[\"]""", Pattern.CASE_INSENSITIVE),
-            Pattern.compile(
-                """[\"]src[\"]\s*:\s*[\"](https?://[^\"'\s<>]+\.(?:m3u8|mp4)[^\"'\s<>]*)[\"]""",
-                Pattern.CASE_INSENSITIVE
-            )
-        )
-
-        for (pattern in patterns) {
-            val matcher = pattern.matcher(html)
-            while (matcher.find()) {
-                val candidate = (if (matcher.groupCount() >= 1) matcher.group(1) else matcher.group())
-                    ?.replace("\\/", "/")
-                if (candidate != null &&
-                    (candidate.contains(".mp4", ignoreCase = true) || candidate.contains(".m3u8", ignoreCase = true)) &&
-                    !candidate.contains("preview", ignoreCase = true) &&
-                    !candidate.contains("thumb", ignoreCase = true)
-                ) {
-                    return candidate
-                }
-            }
-        }
-
-        val doc = Jsoup.parse(html)
-        doc.select("source[src], video[src]").forEach { element ->
-            val src = element.attr("src")
-            if (src.contains(".mp4", ignoreCase = true) || src.contains(".m3u8", ignoreCase = true)) return src
-        }
-        return null
-    }
-
-    private const val DEFAULT_REQUEST_TIMEOUT_MS = 20_000L
-    private const val VERIFY_DETAIL_TIMEOUT_MS = 6_000L
-    private const val VERIFY_PROBE_TIMEOUT_MS = 5_000L
+    private const val MAX_CACHE_ENTRIES = 400
 }

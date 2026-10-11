@@ -1,79 +1,23 @@
 package com.calculator.app.data.extractor
 
-import com.calculator.app.data.model.SearchResult
-import com.calculator.app.network.NetworkClient
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.Request
-import org.jsoup.Jsoup
-
-class HQpornerExtractor : SiteExtractor {
+class HQpornerExtractor : BaseSiteExtractor() {
 
     override val siteName = "hqporner"
 
-    override suspend fun search(query: String, page: Int): List<SearchResult> = withContext(Dispatchers.IO) {
-        if (query.isBlank()) return@withContext emptyList()
+    override val listing = ListingConfig(
+        siteName = siteName,
+        baseUrl = "https://hqporner.com",
+        hrefPattern = Regex("(?:hdporn|hd|video)/([A-Za-z0-9\\-]{3,})"),
+        titleSelectors = listOf("h3", ".title", ".meta", "a.title", "p"),
+        limit = 36
+    )
 
-        val encoded = java.net.URLEncoder.encode(query, "UTF-8")
-        val url = "https://hqporner.com/?q=$encoded"
-
-        val request = Request.Builder().url(url).build()
-
-        try {
-            NetworkClient.client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext emptyList()
-                val html = response.body?.string() ?: return@withContext emptyList()
-                parse(html)
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            emptyList()
+    override fun searchUrl(query: String, page: Int): String {
+        val encoded = Fetch.urlEncode(query)
+        return if (page <= 1) {
+            "https://hqporner.com/?q=$encoded"
+        } else {
+            "https://hqporner.com/?q=$encoded&p=$page"
         }
-    }
-
-    private fun parse(html: String): List<SearchResult> {
-        val doc = Jsoup.parse(html)
-        val results = mutableListOf<SearchResult>()
-
-        val items = doc.select("div.box, div.thumb, article, div.video")
-
-        for (item in items) {
-            try {
-                val linkEl = item.selectFirst("a[href]") ?: continue
-                val href = linkEl.attr("href")
-                if (href.isBlank()) continue
-
-                val detailUrl = when {
-                    href.startsWith("http") -> href
-                    href.startsWith("//") -> "https:$href"
-                    else -> "https://hqporner.com$href"
-                }
-
-                val id = href.trim('/').substringAfterLast('/').ifBlank { href.hashCode().toString() }
-
-                val title = item.selectFirst("h3, .title, .meta, p")?.text()?.trim()
-                    ?: linkEl.attr("title").trim().ifBlank { "Untitled" }
-
-                val thumb = item.selectFirst("img")?.let {
-                    it.attr("data-src").ifBlank { it.attr("src") }
-                }
-
-                val duration = item.selectFirst(".duration, .time, span")?.text()?.trim()
-
-                results.add(
-                    SearchResult(
-                        id = "hqporner_$id",
-                        title = title,
-                        thumbnailUrl = thumb,
-                        duration = duration,
-                        detailUrl = detailUrl,
-                        sourceSite = siteName
-                    )
-                )
-            } catch (_: Exception) {}
-        }
-        return results.distinctBy { it.id }.take(40)
     }
 }
