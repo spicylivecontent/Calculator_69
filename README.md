@@ -1,15 +1,18 @@
 # Calculator
 
-Diskret miniräknar-app (Steg 1 – Projektsetup)
+Diskret miniräknar-app
 
-## Teknisk stack
-- Kotlin
-- Jetpack Compose
-- Material 3
-- minSdk 26
-- targetSdk 35
+## Status
+- ✅ Steg 1: Projektsetup klar
+- ✅ Steg 2: Fullt fungerande miniräknare klar
 
-## Steg 1 klar
-Grundläggande projektstruktur skapad. Appen startar och visar en tom skärm.
+## Steg 2 innehåll
+- Modern mörk UI med gradient
+- Riktig beräkningsmotor (exp4j – open source)
+- Historiklista
+- Stöd för +, -, *, /, %, decimal
+- C och backspace
+- Auto-scroll på input och historik
 
-Nästa steg: Steg 2 – Fullt fungerande miniräknare.
+## Nästa steg
+Steg 3: Hemlig PIN-unlock-mekanism
