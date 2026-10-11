@@ -550,7 +550,7 @@ fun VideoPlayerScreen(
                     setShutterBackgroundColor(android.graphics.Color.BLACK)
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     setKeepContentOnPlayerReset(true)
-                    keepScreenOn = true
+                    this.keepScreenOn = true
                     layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
