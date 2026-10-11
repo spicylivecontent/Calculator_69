@@ -413,9 +413,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             candidates[item.id] = item.copy(playability = Playability.UNVERIFIED)
         }
         publishResults()
-        if (onlyPlayable && results.isEmpty() && candidates.isNotEmpty()) {
+        if (onlyPlayable && results.none { it.isPlayable } && candidates.isNotEmpty()) {
             noticeMessage = "Ingen av träffarna kunde verifieras som spelbar just nu. " +
-                "Prova en annan sökning eller tryck på \"Ladda fler\"."
+                "Tryck på \"Ladda fler\" för fler träffar, eller stäng av \"Bara spelbara\" för att se okontrollerade träffar."
         }
     }
 
@@ -440,8 +440,14 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val terms = plan?.terms?.takeIf { it.isNotEmpty() } ?: ResultRanker.tokenize(query)
         val ranked = ResultRanker.rank(candidates.values.toList(), terms)
         val filtered = ranked.filter { result ->
-            lengthFilter.matches(result.durationSeconds) &&
-                (result.playability != Playability.UNPLAYABLE || !onlyPlayable)
+            lengthFilter.matches(result.durationSeconds) && when (result.playability) {
+                // Verifierat spelbara träffar visas alltid.
+                Playability.PLAYABLE -> true
+                // Träffar som kontrolleras just nu visas medan kontrollen pågår.
+                Playability.CHECKING -> true
+                // Allt annat döljs när användaren bara vill se spelbara videor.
+                Playability.UNPLAYABLE, Playability.UNVERIFIED -> !onlyPlayable
+            }
         }
         results = ResultRanker.applySort(filtered, sortOrder)
         val playable = results.filter { it.isPlayable }.take(30)

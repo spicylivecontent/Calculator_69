@@ -454,7 +454,11 @@ fun SearchScreen(
             if (viewModel.results.isNotEmpty()) {
                 item {
                     SectionHeader(
-                        title = "${viewModel.verifiedCount} spelbara av ${viewModel.results.size} träffar",
+                        title = if (viewModel.isVerifyingResults) {
+                            "${viewModel.verifiedCount} spelbara · ${(viewModel.verificationTotal - viewModel.verificationDone).coerceAtLeast(0)} kvar att kontrollera"
+                        } else {
+                            "${viewModel.verifiedCount} spelbara träffar"
+                        },
                         subtitle = if (viewModel.activeQueries.isEmpty()) null else viewModel.activeQueries.joinToString(" · ") { "“$it”" }
                     )
                 }
@@ -529,7 +533,7 @@ fun SearchScreen(
                         icon = Icons.Default.Movie,
                         title = "Inga spelbara träffar",
                         message = "Prova andra ord, välj fler sajter eller ladda fler träffar. " +
-                            "Vi visar bara videor där strömmen svarar.",
+                            "Vi visar bara videor där strömmen svarat – stäng av \"Bara spelbara\" om du vill se okontrollerade träffar.",
                         actionLabel = if (viewModel.canLoadMore) "Ladda fler" else null,
                         onAction = if (viewModel.canLoadMore) ({ viewModel.loadMore() }) else null
                     )
