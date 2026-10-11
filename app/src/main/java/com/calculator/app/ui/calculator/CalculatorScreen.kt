@@ -1,6 +1,7 @@
 package com.calculator.app.ui.calculator
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
@@ -38,6 +39,11 @@ fun CalculatorScreen(
     val context = LocalContext.current
     val activity = context as? FragmentActivity
 
+    // Back-knappen fungerar som panic när vault är öppen
+    BackHandler(enabled = viewModel.vaultMode != VaultMode.NONE) {
+        viewModel.lockVault()
+    }
+
     // Hantera biometrisk prompt
     LaunchedEffect(viewModel.shouldShowBiometric) {
         if (viewModel.shouldShowBiometric && activity != null) {
@@ -50,15 +56,9 @@ fun CalculatorScreen(
     }
 
     when (viewModel.vaultMode) {
-        VaultMode.REAL -> {
-            RealVaultPlaceholder(onLock = { viewModel.lockVault() })
-        }
-        VaultMode.DECOY -> {
-            DecoyVaultPlaceholder(onLock = { viewModel.lockVault() })
-        }
-        VaultMode.NONE -> {
-            CalculatorUI(viewModel = viewModel)
-        }
+        VaultMode.REAL -> RealVaultPlaceholder(onLock = { viewModel.lockVault() })
+        VaultMode.DECOY -> DecoyVaultPlaceholder(onLock = { viewModel.lockVault() })
+        VaultMode.NONE -> CalculatorUI(viewModel = viewModel)
     }
 }
 
@@ -74,18 +74,15 @@ private fun showBiometricPrompt(
         executor,
         object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                super.onAuthenticationSucceeded(result)
                 onSuccess()
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                super.onAuthenticationError(errorCode, errString)
                 onFailedOrCancelled()
             }
 
             override fun onAuthenticationFailed() {
-                super.onAuthenticationFailed()
-                // Fortsätt låta användaren försöka igen, gör ingenting än
+                // Låt användaren försöka igen
             }
         }
     )
@@ -96,14 +93,12 @@ private fun showBiometricPrompt(
         .setNegativeButtonText("Avbryt")
         .build()
 
-    // Kontrollera om biometri finns
     val biometricManager = BiometricManager.from(activity)
-    when (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK)) {
-        BiometricManager.BIOMETRIC_SUCCESS -> {
-            biometricPrompt.authenticate(promptInfo)
-        }
+    when (biometricManager.canAuthenticate(
+        BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+    )) {
+        BiometricManager.BIOMETRIC_SUCCESS -> biometricPrompt.authenticate(promptInfo)
         else -> {
-            // Om ingen biometri finns → öppna direkt (för emulatorer utan fingeravtryck)
             Toast.makeText(activity, "Ingen biometri tillgänglig – öppnar ändå", Toast.LENGTH_SHORT).show()
             onSuccess()
         }
@@ -126,11 +121,7 @@ private fun CalculatorUI(viewModel: CalculatorViewModel) {
     }
 
     val backgroundBrush = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFF0F2027),
-            Color(0xFF203A43),
-            Color(0xFF2C5364)
-        )
+        colors = listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364))
     )
 
     Column(
@@ -142,10 +133,7 @@ private fun CalculatorUI(viewModel: CalculatorViewModel) {
         verticalArrangement = Arrangement.Bottom
     ) {
         LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(bottom = 8.dp),
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(bottom = 8.dp),
             state = historyListState,
             verticalArrangement = Arrangement.Bottom,
             horizontalAlignment = Alignment.End
@@ -162,20 +150,12 @@ private fun CalculatorUI(viewModel: CalculatorViewModel) {
         }
 
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 20.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
             horizontalAlignment = Alignment.End
         ) {
+            Text(viewModel.result, color = Color(0xFF90A4AE), fontSize = 28.sp, fontWeight = FontWeight.Light, maxLines = 1)
             Text(
-                text = viewModel.result,
-                color = Color(0xFF90A4AE),
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Light,
-                maxLines = 1
-            )
-            Text(
-                text = viewModel.input.ifEmpty { "0" },
+                viewModel.input.ifEmpty { "0" },
                 color = Color.White,
                 fontSize = 52.sp,
                 fontWeight = FontWeight.Bold,
@@ -184,10 +164,7 @@ private fun CalculatorUI(viewModel: CalculatorViewModel) {
             )
         }
 
-        Column(
-            modifier = Modifier.weight(1.6f),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        Column(modifier = Modifier.weight(1.6f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 CalcButton("C", Modifier.weight(1f), Color(0xFF546E7A)) { viewModel.onAction(CalculatorAction.Clear) }
                 CalcIconButton(Modifier.weight(1f), Color(0xFF546E7A)) { viewModel.onAction(CalculatorAction.Delete) }
@@ -238,7 +215,7 @@ fun RealVaultPlaceholder(onLock: () -> Unit) {
             Icon(Icons.Default.Lock, null, tint = Color(0xFF00E676), modifier = Modifier.size(72.dp))
             Text("Vault Unlocked", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             Text(
-                "Riktiga vaulten (placeholder).\nHär kommer det riktiga innehållet senare.",
+                "Riktiga vaulten (placeholder).\nTryck bakåt-knappen eller knappen nedan för att låsa.",
                 color = Color(0xFFB0BEC5),
                 fontSize = 16.sp,
                 textAlign = TextAlign.Center
@@ -250,7 +227,7 @@ fun RealVaultPlaceholder(onLock: () -> Unit) {
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(56.dp)
             ) {
-                Text("Lås igen", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text("Lås igen (Panic)", fontSize = 16.sp, fontWeight = FontWeight.Medium)
             }
         }
     }

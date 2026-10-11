@@ -15,8 +15,8 @@ enum class VaultMode {
 class CalculatorViewModel : ViewModel() {
 
     // === PIN-inställningar ===
-    private var realPin: String = "6969"      // Riktiga koden
-    private var decoyPin: String = "1234"     // Decoy-kod (öppnar tom vault)
+    private var realPin: String = "6969"
+    private var decoyPin: String = "1234"
 
     var input by mutableStateOf("")
         private set
@@ -30,11 +30,9 @@ class CalculatorViewModel : ViewModel() {
     var vaultMode by mutableStateOf(VaultMode.NONE)
         private set
 
-    // Används för att trigga biometrisk prompt från UI
     var shouldShowBiometric by mutableStateOf(false)
         private set
 
-    // Spara vilken typ av unlock som väntar på biometri
     private var pendingVaultMode: VaultMode = VaultMode.NONE
 
     fun onAction(action: CalculatorAction) {
@@ -78,20 +76,17 @@ class CalculatorViewModel : ViewModel() {
 
         when (input) {
             realPin -> {
-                // Rätt PIN → begär biometri för riktiga vaulten
                 input = ""
                 result = ""
                 pendingVaultMode = VaultMode.REAL
                 shouldShowBiometric = true
             }
             decoyPin -> {
-                // Decoy-PIN → öppna tom vault direkt (ingen biometri)
                 input = ""
                 result = ""
                 vaultMode = VaultMode.DECOY
             }
             else -> {
-                // Vanlig beräkning
                 try {
                     val expression = ExpressionBuilder(input).build()
                     val res = expression.evaluate()
@@ -112,24 +107,24 @@ class CalculatorViewModel : ViewModel() {
         }
     }
 
-    /** Anropas när biometrisk autentisering lyckas */
     fun onBiometricSuccess() {
         shouldShowBiometric = false
         vaultMode = pendingVaultMode
         pendingVaultMode = VaultMode.NONE
     }
 
-    /** Anropas när biometrisk autentisering misslyckas eller avbryts */
     fun onBiometricFailedOrCancelled() {
         shouldShowBiometric = false
         pendingVaultMode = VaultMode.NONE
-        // Stanna kvar i miniräknarläge
     }
 
+    /** Panic / Lås vaulten omedelbart */
     fun lockVault() {
         vaultMode = VaultMode.NONE
         input = ""
         result = ""
+        shouldShowBiometric = false
+        pendingVaultMode = VaultMode.NONE
     }
 
     fun updateRealPin(newPin: String) {

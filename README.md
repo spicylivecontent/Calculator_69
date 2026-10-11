@@ -7,22 +7,17 @@ Diskret miniräknar-app
 - ✅ Steg 2: Fullt fungerande miniräknare
 - ✅ Steg 3: Hemlig PIN-unlock
 - ✅ Steg 4: Biometrisk autentisering + decoy-PIN
+- ✅ Steg 5: Diskretion & säkerhetsflaggor
 
-## Hur man använder
+## Säkerhetsfunktioner (Steg 5)
+- **FLAG_SECURE** – blockerar skärmdumpar och gör att app-switchern visar blank/svart
+- **Back-knapp = Panic** – när vault är öppen tar bakåt-knappen dig omedelbart tillbaka till miniräknaren
+- **allowBackup=false** – ingen backup av appdata
+- Röd "Lås igen (Panic)"-knapp i vaulten
 
-### Riktiga vaulten
-1. Skriv **6969**
-2. Tryck **=**
-3. Bekräfta med fingeravtryck / ansikte
-4. Vaulten öppnas
-
-### Decoy-vault (falsk)
-1. Skriv **1234**
-2. Tryck **=**
-3. En tom "Private Notes"-skärm öppnas (ingen biometri)
-
-### Lås igen
-Tryck på knappen i vaulten.
+## PIN-koder
+- **6969** + biometri → Riktiga vaulten
+- **1234** → Decoy-vault (oskyldig)
 
 ## Nästa steg
-Steg 5: Diskretion & säkerhetsflaggor (FLAG_SECURE, excludeFromRecents, panic m.m.)
+Steg 6: Navigation & grundläggande Vault-skal (riktiga skärmar istället för placeholders)
