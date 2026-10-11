@@ -1,5 +1,6 @@
 package com.calculator.app.ui.vault
 
+import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +12,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +22,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,6 +34,7 @@ import com.calculator.app.data.model.SearchResult
 import com.calculator.app.ui.player.TestPlayerButton
 import com.calculator.app.ui.player.VideoPlayerScreen
 import com.calculator.app.ui.search.SearchViewModel
+import com.calculator.app.ui.search.SearchViewModelFactory
 
 enum class VaultTab {
     HOME, SEARCH, LIBRARY, SETTINGS
@@ -139,10 +143,10 @@ private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Text("Multi-site sök aktiv", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("Filter aktivt", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Sökningen hämtar nu från:\n• Eporner\n• SpankBang\n• HQporner\n\nGå till Search-fliken och prova.",
+                    "Du kan nu ange negativa nyckelord i Search-fliken.\nResultat som innehåller de orden filtreras bort automatiskt.",
                     color = Color(0xFF90A4AE),
                     fontSize = 14.sp
                 )
@@ -152,12 +156,18 @@ private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
 }
 
 @Composable
-private fun SearchTab(viewModel: SearchViewModel = viewModel()) {
+private fun SearchTab() {
+    val context = LocalContext.current
+    val viewModel: SearchViewModel = viewModel(
+        factory = SearchViewModelFactory(context.applicationContext as Application)
+    )
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Search", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
+        // Huvudsökfält
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -166,7 +176,7 @@ private fun SearchTab(viewModel: SearchViewModel = viewModel()) {
                 value = viewModel.query,
                 onValueChange = { viewModel.onQueryChange(it) },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Sök på flera sajter...", color = Color(0xFF78909C)) },
+                placeholder = { Text("Vad du vill se...", color = Color(0xFF78909C)) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFF00E676),
                     unfocusedBorderColor = Color(0xFF37474F),
@@ -193,6 +203,25 @@ private fun SearchTab(viewModel: SearchViewModel = viewModel()) {
             }
         }
 
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Negativa filter
+        OutlinedTextField(
+            value = viewModel.negativeKeywords,
+            onValueChange = { viewModel.onNegativeKeywordsChange(it) },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Exkludera (kommaseparerat): anal, rough, ...", color = Color(0xFF78909C)) },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color(0xFFFF5252),
+                unfocusedBorderColor = Color(0xFF37474F),
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                cursorColor = Color(0xFFFF5252)
+            ),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
+
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             "Källor: ${viewModel.supportedSites.joinToString(", ")}",
@@ -200,7 +229,7 @@ private fun SearchTab(viewModel: SearchViewModel = viewModel()) {
             fontSize = 12.sp
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         viewModel.errorMessage?.let { msg ->
             Text(msg, color = Color(0xFFFF8A80), fontSize = 14.sp)
@@ -212,14 +241,20 @@ private fun SearchTab(viewModel: SearchViewModel = viewModel()) {
             modifier = Modifier.fillMaxSize()
         ) {
             items(viewModel.results) { result ->
-                SearchResultCard(result)
+                SearchResultCard(
+                    result = result,
+                    onNeverShow = { viewModel.addNeverShowAgain(it) }
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SearchResultCard(result: SearchResult) {
+private fun SearchResultCard(
+    result: SearchResult,
+    onNeverShow: (String) -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
@@ -234,36 +269,54 @@ private fun SearchResultCard(result: SearchResult) {
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .width(120.dp)
-                    .height(70.dp)
+                    .width(110.dp)
+                    .height(68.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF2A2A4A))
             )
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = result.title,
                     color = Color.White,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     result.duration?.let {
-                        Text(it, color = Color(0xFF90A4AE), fontSize = 12.sp)
+                        Text(it, color = Color(0xFF90A4AE), fontSize = 11.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                     }
                     Text(
                         result.sourceSite,
                         color = Color(0xFF00E676),
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
+            }
+
+            // Never show again-knapp
+            IconButton(
+                onClick = {
+                    // Ta första meningsfulla ordet från titeln som regel
+                    val word = result.title.split(" ")
+                        .map { it.trim().lowercase() }
+                        .firstOrNull { it.length > 3 } ?: result.title.take(12)
+                    onNeverShow(word)
+                }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Block,
+                    contentDescription = "Never show",
+                    tint = Color(0xFFFF5252),
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }
@@ -278,7 +331,7 @@ private fun LibraryTab() {
         Spacer(modifier = Modifier.height(12.dp))
         LibraryItem("Watch Later", "0 videor")
         Spacer(modifier = Modifier.height(12.dp))
-        LibraryItem("Never Show Again", "0 regler")
+        LibraryItem("Never Show Again", "Regler sparas i databasen")
         Spacer(modifier = Modifier.height(12.dp))
         LibraryItem("Sparade sökningar", "0 presets")
     }
@@ -315,7 +368,7 @@ private fun SettingsTab(onLock: () -> Unit) {
         Spacer(modifier = Modifier.height(12.dp))
         SettingsItem("Biometri", "Kräv fingeravtryck/ansikte")
         Spacer(modifier = Modifier.height(12.dp))
-        SettingsItem("Exkluderingsregler", "Ord och taggar att alltid filtrera bort")
+        SettingsItem("Exkluderingsregler", "Hantera Never-show-regler (kommer)")
         Spacer(modifier = Modifier.height(32.dp))
         Button(
             onClick = onLock,

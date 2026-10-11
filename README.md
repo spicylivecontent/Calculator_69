@@ -3,30 +3,30 @@
 Diskret miniräknar-app
 
 ## Status
-- ✅ Steg 1–9: Setup → Första datahämtning
-- ✅ Steg 10: Multi-site scraping
+- ✅ Steg 1–10: Setup → Multi-site scraping
+- ✅ Steg 11: Avancerad filtrering
 
-## Multi-site sök (Steg 10)
+## Filtrering (Steg 11)
 
-Sökningen hämtar nu parallellt från:
+### Tillfälliga negativa filter
+I Search-fliken finns ett rött fält:
+```
+Exkludera (kommaseparerat): anal, rough, ...
+```
+Alla resultat vars titel innehåller något av orden filtreras bort direkt.
 
-| Sajt | Status |
-|------|--------|
-| Eporner | ✅ |
-| SpankBang | ✅ |
-| HQporner | ✅ |
+### Permanent "Never show again"
+Varje resultatkort har en röd block-ikon.
+Tryck på den → ordet sparas i databasen som en permanent regel och försvinner från listan.
 
-Resultaten blandas (round-robin) så att ingen enskild sajt dominerar listan.
-
-### Testa
-1. Lås upp med **6969** + biometri
-2. Gå till **Search**
-3. Skriv en sökterm och tryck Sök
-4. Du ska se resultat från flera källor (källnamnet visas grönt under varje titel)
+### Hur det fungerar
+1. Sökningen hämtar rådata från Eporner + SpankBang + HQporner
+2. Resultaten körs genom dina negativa regler (UI + databas)
+3. Endast rena träffar visas
 
 ## PIN-koder
 - **6969** + biometri → Riktiga vaulten
 - **1234** → Decoy-vault
 
 ## Nästa steg
-Steg 11: Avancerad filtrering (positiva + negativa regler)
+Steg 12: AI-sök & semantisk expansion (valfritt / mer avancerat)
