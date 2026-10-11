@@ -31,7 +31,26 @@ jobs:
           cache-provider: basic
 
       - name: Build Debug APK
-        run: ./gradlew --no-daemon assembleDebug --stacktrace
+        id: build_apk
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleDebug --stacktrace --console=plain 2>&1 | tee gradle-build.log
+
+      - name: Report Gradle failure details
+        if: failure() && steps.build_apk.outcome == 'failure'
+        run: |
+          {
+            echo "## Gradle build failure details"
+            echo
+            echo '```text'
+            grep -E '(^e: | error: |FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find)' gradle-build.log | tail -n 50 || tail -n 80 gradle-build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -E '(^e: | error: |FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find)' gradle-build.log | tail -n 50 | while IFS= read -r line; do
+            line=${line//'%'/'%25'}
+            line=${line//$'\r'/'%0D'}
+            echo "::error title=Gradle diagnostic::$line"
+          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
