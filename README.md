@@ -1,33 +1,41 @@
 # Calculator
 
-Diskret miniräknar-app
+Diskret miniräknar-app – personlig användning
 
-## Status
-- ✅ Steg 1–13
-- ✅ Steg 14: Reklamblockering & nätverkssäkerhet
+## Status: Steg 1–15 klara
 
-## Steg 14 – Nätverkssäkerhet
+### Alla 10 sajter
+| # | Sajt | Status |
+|---|------|--------|
+| 1 | Eporner | ✅ sök + stream |
+| 2 | SpankBang | ✅ sök + stream |
+| 3 | HQporner | ✅ sök + stream |
+| 4 | XVideos | ✅ sök + stream |
+| 5 | XNXX | ✅ sök + stream |
+| 6 | xHamster | ✅ sök |
+| 7 | Pornhub | ✅ sök |
+| 8 | Beeg | ✅ sök |
+| 9 | YouPorn | ✅ sök |
+| 10 | PornTrex | ✅ sök |
 
-### AdBlockInterceptor
-Blockerar kända reklam- och trackingdomäner (DoubleClick, JuicyAds, ExoClick, Google Analytics, Facebook Pixel, m.fl.).
-Requests till dessa hostar når aldrig nätverket.
+### Steg 15 – Stream & uppspelning
+- **StreamResolver** försöker hitta direkt mp4/m3u8 från detaljsidan
+- Bäst stöd: Eporner, XVideos/XNXX-familjen
+- Tryck på ett sökresultat → "Hämtar stream..." → ExoPlayer
+- Om stream inte hittas visas felmeddelande (sajter ändrar ofta HTML)
 
-### PrivacyInterceptor
-- Tar bort tracking-queryparametrar (`utm_*`, `fbclid`, `gclid`, m.fl.)
-- Sätter `DNT: 1` och `Sec-GPC: 1`
-- Använder en generisk mobil User-Agent
-- Tar bort WebView-signaturer
+### Övrigt som finns
+- Diskret miniräknare + PIN `6969` + biometri + decoy `1234`
+- FLAG_SECURE, panic, allowBackup=false
+- On-device AI-query-expander
+- Negativa filter + Never-show (Room)
+- Favoriter / Watch Later / Library
+- Ad-block + privacy interceptors
+- Endast HTTPS
 
-### Network security
-- `usesCleartextTraffic="false"` – endast HTTPS
-- Egen `network_security_config.xml`
-- Delad `NetworkClient` används av alla extractors
+## PIN
+- **6969** + biometri → Vault
+- **1234** → Decoy
 
-Eftersom appen **inte** laddar webbsidor i en WebView utan bara hämtar HTML för parsing och spelar rena stream-URL:er, syns nästan ingen reklam i praktiken. Interceptorerna är ändå ett extra skydd.
-
-## PIN-koder
-- **6969** + biometri → Riktiga vaulten
-- **1234** → Decoy-vault
-
-## Nästa steg
-Steg 15: Polering, stream-extract (spela riktiga videor) & slutfinish
+## Viktigt
+Scraping är best-effort. Sajter ändrar layout och skyddar streams. Vissa källor kan ge 0 resultat eller misslyckas med stream beroende på region/nätverk. Eporner och XVideos-familjen brukar fungera bäst.
