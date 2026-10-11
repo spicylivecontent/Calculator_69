@@ -3,28 +3,27 @@
 Diskret miniräknar-app
 
 ## Status
-- ✅ Steg 1: Projektsetup
-- ✅ Steg 2: Fullt fungerande miniräknare
-- ✅ Steg 3: Hemlig PIN-unlock
-- ✅ Steg 4: Biometrisk autentisering + decoy-PIN
-- ✅ Steg 5: Diskretion & säkerhetsflaggor
-- ✅ Steg 6: Navigation & Vault-skal
+- ✅ Steg 1–6: Setup, miniräknare, PIN, biometri, diskretion, vault-navigation
+- ✅ Steg 7: Lokal databas (Room)
 
-## Vault-struktur (Steg 6)
-När du låser upp med **6969** + biometri får du nu en riktig vault med:
+## Databas (Steg 7)
 
-- **Home** – Discover / rekommendationer (placeholder)
-- **Search** – Sökfält för naturligt språk (placeholder)
-- **Library** – Favoriter, Watch Later, Never Show Again, sparade sökningar
-- **Settings** – PIN, biometri, exkluderingsregler + Panic-knapp
+Room-databas med följande tabeller:
 
-Bottennavigation med ikoner.
+| Tabell | Syfte |
+|--------|------|
+| `videos` | Metadata för videor (titel, thumbnail, källa, stream-url, taggar) |
+| `favorites` | Sparade favoriter |
+| `watch_later` | Titta senare |
+| `dislike_rules` | Never-show-again regler (keyword/tag/performer/video/site) |
+| `search_presets` | Sparade sökfilter |
+| `app_settings` | Key-value för PIN och andra inställningar |
 
-Decoy-PIN (**1234**) visar fortfarande en enkel oskyldig skärm.
+Repository-klass finns redo att användas från ViewModels.
 
 ## PIN-koder
 - **6969** + biometri → Riktiga vaulten
 - **1234** → Decoy-vault
 
 ## Nästa steg
-Steg 7: Lokal databas (Room) för metadata, favoriter, dislike-regler m.m.
+Steg 8: ExoPlayer + grundläggande videoplayer
