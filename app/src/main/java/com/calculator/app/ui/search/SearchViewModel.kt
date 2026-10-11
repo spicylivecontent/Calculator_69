@@ -33,6 +33,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var isLoading by mutableStateOf(false)
         private set
 
+    var isVerifyingResults by mutableStateOf(false)
+        private set
+
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
@@ -49,6 +52,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var playingUrl by mutableStateOf<String?>(null)
         private set
     var playingTitle by mutableStateOf("")
+        private set
+    var playingReferer by mutableStateOf("")
+        private set
+    var playingVideoId by mutableStateOf<String?>(null)
         private set
     var isResolvingStream by mutableStateOf(false)
         private set
@@ -102,35 +109,34 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun search() {
-        if (query.isBlank()) return
+        val queryToSearch = query.trim()
+        if (queryToSearch.isBlank() || isLoading) return
+        val exclusionsToSearch = negativeKeywords
 
         viewModelScope.launch {
             isLoading = true
+            isVerifyingResults = false
             errorMessage = null
             aiExplanation = null
+            results = emptyList()
+            lastFeed = emptyList()
 
             try {
-                val expanded = expander.expand(query)
+                val expanded = expander.expand(queryToSearch)
                 if (expanded.blockedReason != null) {
-                    aiExplanation = null
-                    results = emptyList()
-                    lastFeed = emptyList()
                     errorMessage = expanded.blockedReason
                     return@launch
                 }
                 aiExplanation = expanded.explanation
                 if (expanded.searchTerms.isBlank()) {
-                    results = emptyList()
-                    lastFeed = emptyList()
                     errorMessage = "Ange minst ett positivt sökord utöver exkluderingarna."
                     return@launch
                 }
 
                 val raw = searcher.search(expanded.searchTerms)
-
                 val blocked = mutableSetOf<String>()
                 expanded.negativeKeywords.forEach { blocked.add(it.lowercase(Locale.ROOT)) }
-                negativeKeywords.split(",", "\n")
+                exclusionsToSearch.split(",", "\n")
                     .map { it.trim().lowercase(Locale.ROOT) }
                     .filter { it.isNotBlank() }
                     .forEach { blocked.add(it) }
@@ -139,16 +145,20 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 rules.filter { it.type == "keyword" || it.type == "tag" }
                     .forEach { blocked.add(it.value.lowercase(Locale.ROOT)) }
 
-                val filtered = raw.filter { result ->
+                val safeCandidates = raw.filter { result ->
                     val titleLower = result.title.lowercase(Locale.ROOT)
                     !expander.containsBlockedAgeTerm(result.title) &&
                         blocked.none { bad -> titleLower.contains(bad) }
                 }
 
-                results = filtered
-                lastFeed = filtered
+                isVerifyingResults = safeCandidates.isNotEmpty()
+                val verified = searcher.verifyPlayable(safeCandidates)
+                isVerifyingResults = false
+                val rankedResults = rankResults(verified, expanded.searchTerms)
+                results = rankedResults
+                lastFeed = rankedResults
 
-                val videosToSave = filtered.take(40).map { result ->
+                val videosToSave = rankedResults.take(40).map { result ->
                     VideoEntity(
                         id = result.id,
                         title = result.title,
@@ -159,11 +169,11 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 if (videosToSave.isNotEmpty()) repository.insertVideos(videosToSave)
 
-                if (results.isEmpty()) {
-                    errorMessage = if (raw.isEmpty()) {
-                        "Inga resultat hittades från någon sajt"
-                    } else {
-                        "Resultaten filtrerades bort av säkerhets- eller exkluderingsregler."
+                if (rankedResults.isEmpty()) {
+                    errorMessage = when {
+                        raw.isEmpty() -> "Inga resultat hittades från någon sajt."
+                        safeCandidates.isEmpty() -> "Resultaten filtrerades bort av säkerhets- eller exkluderingsregler."
+                        else -> "Hittade kandidater, men ingen stream kunde verifieras som tillgänglig. Försök igen senare."
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -173,36 +183,63 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 results = emptyList()
                 lastFeed = emptyList()
             } finally {
+                isVerifyingResults = false
                 isLoading = false
             }
         }
     }
 
+    private fun rankResults(candidates: List<SearchResult>, expandedQuery: String): List<SearchResult> {
+        val terms = expandedQuery.lowercase(Locale.ROOT)
+            .split(Regex("[^\\p{L}\\p{N}]+"))
+            .filter { it.length >= 3 }
+            .distinct()
+
+        return candidates.sortedByDescending { candidate ->
+            val title = candidate.title.lowercase(Locale.ROOT)
+            terms.count { term -> title.contains(term) }
+        }
+    }
+
     fun playVideo(result: SearchResult) {
         viewModelScope.launch {
-            isResolvingStream = true
+            isResolvingStream = result.streamUrl == null
             errorMessage = null
             try {
-                val streamUrl = StreamResolver.resolve(result.detailUrl, result.sourceSite)
+                val streamUrl = result.streamUrl ?: StreamResolver.resolvePlayable(
+                    detailUrl = result.detailUrl,
+                    sourceSite = result.sourceSite
+                )
                 if (streamUrl != null) {
                     playingUrl = streamUrl
                     playingTitle = result.title
+                    playingReferer = result.detailUrl
+                    playingVideoId = result.id
                 } else {
-                    errorMessage = "Kunde inte hitta stream för denna video (${result.sourceSite})"
+                    markVideoUnavailable(result.id)
+                    errorMessage = "Videon är inte längre tillgänglig och har tagits bort från resultaten."
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
-                errorMessage = "Fel vid stream-extract: ${e.message}"
+                markVideoUnavailable(result.id)
+                errorMessage = "Videon kunde inte spelas (${e.message ?: result.sourceSite})."
             } finally {
                 isResolvingStream = false
             }
         }
     }
 
+    fun markVideoUnavailable(videoId: String) {
+        results = results.filterNot { it.id == videoId }
+        lastFeed = lastFeed.filterNot { it.id == videoId }
+    }
+
     fun closePlayer() {
         playingUrl = null
         playingTitle = ""
+        playingReferer = ""
+        playingVideoId = null
     }
 
     fun addFavorite(result: SearchResult) {

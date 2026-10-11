@@ -3,7 +3,10 @@ package com.calculator.app.data.extractor
 import com.calculator.app.data.model.SearchResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Söker parallellt på alla stödda sajter och blandar resultaten.
@@ -22,6 +25,7 @@ class MultiSiteSearcher {
         YouPornExtractor(),
         PornTrexExtractor()
     )
+    private val verificationSemaphore = Semaphore(VERIFICATION_CONCURRENCY)
 
     suspend fun search(query: String): List<SearchResult> = coroutineScope {
         if (query.isBlank()) return@coroutineScope emptyList()
@@ -51,5 +55,36 @@ class MultiSiteSearcher {
         mixed.distinctBy { it.id }
     }
 
+    /** Returns only results whose direct stream responds as playable media. */
+    suspend fun verifyPlayable(candidates: List<SearchResult>): List<SearchResult> = coroutineScope {
+        candidates
+            .distinctBy { it.id }
+            .take(MAX_CANDIDATES_TO_VERIFY)
+            .map { candidate ->
+                async {
+                    verificationSemaphore.withPermit {
+                        try {
+                            val streamUrl = StreamResolver.resolvePlayable(
+                                detailUrl = candidate.detailUrl,
+                                sourceSite = candidate.sourceSite
+                            )
+                            streamUrl?.let { candidate.copy(streamUrl = it) }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                }
+            }
+            .awaitAll()
+            .filterNotNull()
+    }
+
     fun getSupportedSites(): List<String> = extractors.map { it.siteName }
+
+    private companion object {
+        const val VERIFICATION_CONCURRENCY = 6
+        const val MAX_CANDIDATES_TO_VERIFY = 24
+    }
 }

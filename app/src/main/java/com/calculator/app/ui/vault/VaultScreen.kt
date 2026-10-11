@@ -96,7 +96,12 @@ fun VaultScreen(
         VideoPlayerScreen(
             videoUrl = searchViewModel.playingUrl!!,
             title = searchViewModel.playingTitle,
-            onBack = { searchViewModel.closePlayer() }
+            refererUrl = searchViewModel.playingReferer,
+            onBack = { searchViewModel.closePlayer() },
+            videoId = searchViewModel.playingVideoId,
+            onPlaybackError = { videoId ->
+                if (videoId != null) searchViewModel.markVideoUnavailable(videoId)
+            }
         )
         return
     }
@@ -431,6 +436,12 @@ private fun SearchTab(viewModel: SearchViewModel) {
             color = Color(0xFF607D8B),
             fontSize = 11.sp
         )
+
+        if (viewModel.isVerifyingResults) {
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFF00E676))
+            Text("Kontrollerar att videorna går att spela...", color = Color(0xFF90A4AE), fontSize = 12.sp)
+        }
 
         if (viewModel.isResolvingStream) {
             Spacer(modifier = Modifier.height(8.dp))

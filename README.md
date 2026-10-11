@@ -36,4 +36,6 @@ Eporner, SpankBang, HQporner, XVideos, XNXX, xHamster, Pornhub, Beeg, YouPorn, P
 
 ## Viktigt
 
+Sokresultat visas forst efter en snabb kontroll att den extraherade HTTPS-streamen svarar som video eller HLS. Det minskar antalet trasiga resultat, men kan inte garantera att en stream inte gar ut eller blockeras efter kontrollen. Spelaren har sokreglage, 10-sekunders spolning och kvalitetsval for adaptiva streams; den kan inte skapa hogre kvalitet an källan erbjuder.
+
 Scraping och stream-extraktion ar best-effort och kan sluta fungera nar sajterna andrar sina sidor. Kontrollera att du foljer lokal lagstiftning och respektive sajts villkor.

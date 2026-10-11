@@ -6,5 +6,7 @@ data class SearchResult(
     val thumbnailUrl: String?,
     val duration: String?,
     val detailUrl: String,
-    val sourceSite: String = "eporner"
+    val sourceSite: String = "eporner",
+    /** Verified direct media URL when the result has passed the stream availability check. */
+    val streamUrl: String? = null
 )

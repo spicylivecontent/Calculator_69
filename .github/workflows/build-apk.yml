@@ -34,7 +34,7 @@ jobs:
         id: build_apk
         run: |
           set -o pipefail
-          ./gradlew --no-daemon assembleDebug --stacktrace --console=plain 2>&1 | tee gradle-build.log
+          ./gradlew --no-daemon testDebugUnitTest assembleDebug --stacktrace --console=plain 2>&1 | tee gradle-build.log
 
       - name: Report Gradle failure details
         if: failure() && steps.build_apk.outcome == 'failure'
