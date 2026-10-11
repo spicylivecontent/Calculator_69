@@ -211,7 +211,7 @@ fun VideoPlayerScreen(
             .build()
             .apply {
                 setHandleAudioBecomingNoisy(true)
-                seekParameters = SeekParameters.DEFAULT
+                setSeekParameters(SeekParameters.DEFAULT)
                 setMediaItem(MediaItem.fromUri(videoUrl))
                 prepare()
                 playWhenReady = true
@@ -486,7 +486,7 @@ fun VideoPlayerScreen(
                                     scrubStartMs = positionMs
                                     scrubTargetMs = positionMs
                                     accumulated = 0f
-                                    exoPlayer.seekParameters = SeekParameters.CLOSEST_SYNC
+                                    exoPlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
                                 },
                                 onHorizontalDrag = { change, dragAmount ->
                                     change.consume()
@@ -502,13 +502,13 @@ fun VideoPlayerScreen(
                                 },
                                 onDragEnd = {
                                     isScrubbing = false
-                                    exoPlayer.seekParameters = SeekParameters.DEFAULT
+                                    exoPlayer.setSeekParameters(SeekParameters.DEFAULT)
                                     seekTo(scrubTargetMs)
                                     showControls = true
                                 },
                                 onDragCancel = {
                                     isScrubbing = false
-                                    exoPlayer.seekParameters = SeekParameters.DEFAULT
+                                    exoPlayer.setSeekParameters(SeekParameters.DEFAULT)
                                 }
                             )
                         }
@@ -660,18 +660,18 @@ fun VideoPlayerScreen(
                     isScrubbing = true
                     scrubStartMs = positionMs
                     scrubTargetMs = positionMs
-                    exoPlayer.seekParameters = SeekParameters.CLOSEST_SYNC
+                    exoPlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
                 },
                 onScrubPreview = { scrubTargetMs = it },
                 onScrubCommit = { target ->
                     isScrubbing = false
-                    exoPlayer.seekParameters = SeekParameters.DEFAULT
+                    exoPlayer.setSeekParameters(SeekParameters.DEFAULT)
                     seekTo(target)
                     showControls = true
                 },
                 onScrubCancel = {
                     isScrubbing = false
-                    exoPlayer.seekParameters = SeekParameters.DEFAULT
+                    exoPlayer.setSeekParameters(SeekParameters.DEFAULT)
                 },
                 onRestart = {
                     seekTo(0L)

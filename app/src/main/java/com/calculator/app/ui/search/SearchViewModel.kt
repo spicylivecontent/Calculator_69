@@ -147,6 +147,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var resolvingTitle by mutableStateOf("")
         private set
 
+    /**
+     * Ökas varje gång uppspelningshistoriken ändras. Vyer som läser historiken
+     * direkt (i stället för via flöden) kan räkna om sina listor på den här.
+     */
+    var playbackRevision by mutableStateOf(0)
+        private set
+
     // ---------- Bakåtkompatibla vyer ----------
     val isLoading: Boolean get() = isSearching
     val isVerifyingResults: Boolean get() = verificationTotal > 0 && verificationDone < verificationTotal
@@ -173,6 +180,26 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onNegativeKeywordsChange(value: String) {
         negativeKeywords = value
+    }
+
+    /**
+     * Snabbval från startsidan: markerar de underkategorier som matchar valda
+     * termer och startar sökningen direkt. Saknas en matchande underkategori
+     * används termen som fritext i stället.
+     */
+    fun applyQuickPick(terms: List<String>) {
+        val wanted = terms.map { it.trim().lowercase(Locale.ROOT) }.filter { it.isNotBlank() }
+        val matchingIds = SearchTaxonomy.allSubcategories
+            .filter { subcategory -> wanted.any { term -> subcategory.terms.any { it.equals(term, ignoreCase = true) } } }
+            .map { it.id }
+            .toSet()
+        selectedSubcategoryIds = matchingIds
+        if (matchingIds.isEmpty()) {
+            query = terms.firstOrNull().orEmpty()
+        }
+        explanation = null
+        errorMessage = null
+        search()
     }
 
     fun onSubcategoryToggle(subcategoryId: String) {
@@ -468,6 +495,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     candidates[playable.id] = playable
                 }
                 playbackStore.savePlayed(playable)
+                playbackRevision++
 
                 if (!keepQueue || queue.isEmpty()) {
                     queue = results.filter { it.isPlayable && !it.streamUrl.isNullOrBlank() }
@@ -571,18 +599,21 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onPlaybackProgress(videoId: String, positionMs: Long, durationMs: Long) {
         playbackStore.saveProgress(videoId, positionMs, durationMs)
+        playbackRevision++
     }
 
     fun closePlayer() {
         nowPlaying = null
         queue = emptyList()
         queueIndex = 0
+        playbackRevision++
     }
 
     fun markVideoUnavailable(videoId: String) {
         candidates[videoId]?.let { candidates[videoId] = it.copy(playability = Playability.UNPLAYABLE) }
         results = results.filterNot { it.id == videoId }
         lastFeed = lastFeed.filterNot { it.id == videoId }
+        playbackRevision++
     }
 
     // ---------------------------------------------------------------------
@@ -593,7 +624,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     fun continueWatching(limit: Int = 10): List<RecentPlayback> = playbackStore.continueWatching(limit)
 
-    fun clearPlaybackHistory() = playbackStore.clear()
+    fun clearPlaybackHistory() {
+        playbackStore.clear()
+        playbackRevision++
+    }
 
     fun addFavorite(result: SearchResult) {
         viewModelScope.launch {

@@ -19,7 +19,7 @@ sealed interface QualityChoice {
     }
 
     data class Exact(val height: Int, val bitrate: Int) : QualityChoice {
-        override val label: String get() = describeQuality(height, bitrate)
+        override val label: String get() = PlayerQuality.describeQuality(height, bitrate)
     }
 }
 
