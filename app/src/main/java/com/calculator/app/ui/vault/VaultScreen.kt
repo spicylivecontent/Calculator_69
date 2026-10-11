@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.calculator.app.ui.player.TestPlayerButton
+import com.calculator.app.ui.player.VideoPlayerScreen
 
 enum class VaultTab {
     HOME, SEARCH, LIBRARY, SETTINGS
@@ -31,6 +33,17 @@ fun VaultScreen(
     onLock: () -> Unit
 ) {
     var currentTab by remember { mutableStateOf(VaultTab.HOME) }
+    var showTestPlayer by remember { mutableStateOf(false) }
+
+    // Om test-player är aktiv → visa den fullskärm
+    if (showTestPlayer) {
+        VideoPlayerScreen(
+            videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+            title = "Big Buck Bunny (Test)",
+            onBack = { showTestPlayer = false }
+        )
+        return
+    }
 
     val backgroundBrush = if (isDecoy) {
         Brush.verticalGradient(listOf(Color(0xFF2C2C2C), Color(0xFF1E1E1E)))
@@ -46,30 +59,10 @@ fun VaultScreen(
                     containerColor = Color(0xFF1A1A2E),
                     contentColor = Color.White
                 ) {
-                    VaultNavItem(
-                        icon = Icons.Default.Home,
-                        label = "Home",
-                        selected = currentTab == VaultTab.HOME,
-                        onClick = { currentTab = VaultTab.HOME }
-                    )
-                    VaultNavItem(
-                        icon = Icons.Default.Search,
-                        label = "Search",
-                        selected = currentTab == VaultTab.SEARCH,
-                        onClick = { currentTab = VaultTab.SEARCH }
-                    )
-                    VaultNavItem(
-                        icon = Icons.Default.VideoLibrary,
-                        label = "Library",
-                        selected = currentTab == VaultTab.LIBRARY,
-                        onClick = { currentTab = VaultTab.LIBRARY }
-                    )
-                    VaultNavItem(
-                        icon = Icons.Default.Settings,
-                        label = "Settings",
-                        selected = currentTab == VaultTab.SETTINGS,
-                        onClick = { currentTab = VaultTab.SETTINGS }
-                    )
+                    VaultNavItem(Icons.Default.Home, "Home", currentTab == VaultTab.HOME) { currentTab = VaultTab.HOME }
+                    VaultNavItem(Icons.Default.Search, "Search", currentTab == VaultTab.SEARCH) { currentTab = VaultTab.SEARCH }
+                    VaultNavItem(Icons.Default.VideoLibrary, "Library", currentTab == VaultTab.LIBRARY) { currentTab = VaultTab.LIBRARY }
+                    VaultNavItem(Icons.Default.Settings, "Settings", currentTab == VaultTab.SETTINGS) { currentTab = VaultTab.SETTINGS }
                 }
             }
         }
@@ -84,7 +77,10 @@ fun VaultScreen(
                 DecoyContent(onLock = onLock)
             } else {
                 when (currentTab) {
-                    VaultTab.HOME -> HomeTab(onLock = onLock)
+                    VaultTab.HOME -> HomeTab(
+                        onLock = onLock,
+                        onPlayTest = { showTestPlayer = true }
+                    )
                     VaultTab.SEARCH -> SearchTab()
                     VaultTab.LIBRARY -> LibraryTab()
                     VaultTab.SETTINGS -> SettingsTab(onLock = onLock)
@@ -117,7 +113,7 @@ private fun RowScope.VaultNavItem(
 }
 
 @Composable
-private fun HomeTab(onLock: () -> Unit) {
+private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -129,30 +125,18 @@ private fun HomeTab(onLock: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Discover",
-                color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text("Discover", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             IconButton(onClick = onLock) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = "Lås",
-                    tint = Color(0xFFFF5252)
-                )
+                Icon(Icons.Default.Lock, "Lås", tint = Color(0xFFFF5252))
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        Text(
-            text = "Välkommen till vaulten",
-            color = Color(0xFFB0BEC5),
-            fontSize = 16.sp
-        )
+        // Test-knapp för videoplayer
+        TestPlayerButton(onPlayTest = onPlayTest)
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -160,15 +144,10 @@ private fun HomeTab(onLock: () -> Unit) {
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Text(
-                    text = "Home / Discover",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Text("Home / Discover", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Här kommer AI-rekommendationer och det gemensamma flödet från alla sajter att visas.",
+                    "Här kommer AI-rekommendationer och det gemensamma flödet att visas.\n\nTryck på knappen ovan för att testa videoplayern.",
                     color = Color(0xFF90A4AE),
                     fontSize = 14.sp
                 )
@@ -179,20 +158,9 @@ private fun HomeTab(onLock: () -> Unit) {
 
 @Composable
 private fun SearchTab() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp)
-    ) {
-        Text(
-            text = "Search",
-            color = Color.White,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold
-        )
-
+    Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+        Text("Search", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(24.dp))
-
         OutlinedTextField(
             value = "",
             onValueChange = {},
@@ -208,56 +176,20 @@ private fun SearchTab() {
             shape = RoundedCornerShape(12.dp),
             singleLine = true
         )
-
         Spacer(modifier = Modifier.height(16.dp))
-
         Text(
-            text = "Exempel: brunette in kitchen, POV, slow, no anal, only amateur",
+            "Exempel: brunette in kitchen, POV, slow, no anal, only amateur",
             color = Color(0xFF607D8B),
             fontSize = 13.sp
         )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text(
-                    text = "Avancerad sök kommer här",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Positiva & negativa filter, AI-expansion och multi-site-sökning byggs i senare steg.",
-                    color = Color(0xFF90A4AE),
-                    fontSize = 14.sp
-                )
-            }
-        }
     }
 }
 
 @Composable
 private fun LibraryTab() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp)
-    ) {
-        Text(
-            text = "Library",
-            color = Color.White,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold
-        )
-
+    Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+        Text("Library", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(24.dp))
-
         LibraryItem("Favoriter", "0 videor")
         Spacer(modifier = Modifier.height(12.dp))
         LibraryItem("Watch Later", "0 videor")
@@ -276,9 +208,7 @@ private fun LibraryItem(title: String, subtitle: String) {
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -292,20 +222,9 @@ private fun LibraryItem(title: String, subtitle: String) {
 
 @Composable
 private fun SettingsTab(onLock: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp)
-    ) {
-        Text(
-            text = "Settings",
-            color = Color.White,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold
-        )
-
+    Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+        Text("Settings", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(24.dp))
-
         SettingsItem("Byt PIN-kod", "Ändra den hemliga koden")
         Spacer(modifier = Modifier.height(12.dp))
         SettingsItem("Decoy-PIN", "Ändra den falska koden")
@@ -313,18 +232,14 @@ private fun SettingsTab(onLock: () -> Unit) {
         SettingsItem("Biometri", "Kräv fingeravtryck/ansikte")
         Spacer(modifier = Modifier.height(12.dp))
         SettingsItem("Exkluderingsregler", "Ord och taggar att alltid filtrera bort")
-
         Spacer(modifier = Modifier.height(32.dp))
-
         Button(
             onClick = onLock,
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
+            modifier = Modifier.fillMaxWidth().height(52.dp)
         ) {
-            Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(20.dp))
+            Icon(Icons.Default.Lock, null, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(8.dp))
             Text("Lås vaulten (Panic)", fontSize = 16.sp, fontWeight = FontWeight.Medium)
         }
@@ -348,32 +263,15 @@ private fun SettingsItem(title: String, subtitle: String) {
 @Composable
 private fun DecoyContent(onLock: () -> Unit) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
+        modifier = Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            imageVector = Icons.Default.Lock,
-            contentDescription = null,
-            tint = Color(0xFFFFC107),
-            modifier = Modifier.size(64.dp)
-        )
+        Icon(Icons.Default.Lock, null, tint = Color(0xFFFFC107), modifier = Modifier.size(64.dp))
         Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            text = "Private Notes",
-            color = Color.White,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Text("Private Notes", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = "Inga anteckningar sparade ännu.",
-            color = Color(0xFFB0BEC5),
-            fontSize = 15.sp,
-            textAlign = TextAlign.Center
-        )
+        Text("Inga anteckningar sparade ännu.", color = Color(0xFFB0BEC5), fontSize = 15.sp, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(32.dp))
         Button(
             onClick = onLock,

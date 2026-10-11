@@ -3,27 +3,26 @@
 Diskret miniräknar-app
 
 ## Status
-- ✅ Steg 1–6: Setup, miniräknare, PIN, biometri, diskretion, vault-navigation
-- ✅ Steg 7: Lokal databas (Room)
+- ✅ Steg 1–7: Setup → Databas
+- ✅ Steg 8: ExoPlayer + videoplayer
 
-## Databas (Steg 7)
+## Videoplayer (Steg 8)
 
-Room-databas med följande tabeller:
+- Media3 ExoPlayer (stödjer MP4 + HLS)
+- Ren fullskärmsspelare utan reklam
+- Play/Pause-kontroll
+- Bakåt-knapp
+- Automatiskt dölja kontroller efter 3 sekunder
 
-| Tabell | Syfte |
-|--------|------|
-| `videos` | Metadata för videor (titel, thumbnail, källa, stream-url, taggar) |
-| `favorites` | Sparade favoriter |
-| `watch_later` | Titta senare |
-| `dislike_rules` | Never-show-again regler (keyword/tag/performer/video/site) |
-| `search_presets` | Sparade sökfilter |
-| `app_settings` | Key-value för PIN och andra inställningar |
-
-Repository-klass finns redo att användas från ViewModels.
+### Testa playern
+1. Lås upp vaulten med **6969** + biometri
+2. Gå till **Home**-fliken
+3. Tryck på den gröna knappen **"Testa videoplayer (Big Buck Bunny)"**
+4. En publik testvideo ska börja spelas
 
 ## PIN-koder
 - **6969** + biometri → Riktiga vaulten
 - **1234** → Decoy-vault
 
 ## Nästa steg
-Steg 8: ExoPlayer + grundläggande videoplayer
+Steg 9: Första enkla datahämtning (en sajt)
