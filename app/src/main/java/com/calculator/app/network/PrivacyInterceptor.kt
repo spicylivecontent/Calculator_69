@@ -23,19 +23,26 @@ class PrivacyInterceptor : Interceptor {
         val original = chain.request()
         val originalUrl = original.url
 
-        // Bygg ny URL utan tracking-parametrar
+        // Keep media query strings intact; some signed stream URLs use parameter names
+        // that also appear in the tracking list (for example "source" or "ref").
+        val isMediaProbe = original.header("Range") != null
         val cleanUrlBuilder = originalUrl.newBuilder()
-        for (name in originalUrl.queryParameterNames) {
-            if (name.lowercase(Locale.ROOT) in trackingParams) {
-                cleanUrlBuilder.removeAllQueryParameters(name)
+        if (!isMediaProbe) {
+            for (name in originalUrl.queryParameterNames) {
+                if (name.lowercase(Locale.ROOT) in trackingParams) {
+                    cleanUrlBuilder.removeAllQueryParameters(name)
+                }
             }
         }
 
         val cleanRequest = original.newBuilder()
             .url(cleanUrlBuilder.build())
-            // Privacy-orienterade headers
+            // Privacy-friendly headers; allow media MIME types on the range probe.
             .header("User-Agent", USER_AGENT)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header(
+                "Accept",
+                if (isMediaProbe) "*/*" else "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            )
             .header("Accept-Language", "en-US,en;q=0.9")
             .header("DNT", "1")                          // Do Not Track
             .header("Sec-GPC", "1")                      // Global Privacy Control
