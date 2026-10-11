@@ -168,7 +168,7 @@ class SearchPlanner {
             val bigram = if (index + 1 < tokens.size) "$single ${tokens[index + 1]}" else null
             val bigramMatch = bigram?.let { SYNONYMS[normalizeTerm(it)] }
             if (bigramMatch != null) {
-                positives.add(bigramMatch.first)
+                positives.add(bigramMatch.first())
                 synonymVariants.addAll(bigramMatch.drop(1))
                 index += 2
                 continue
@@ -176,7 +176,7 @@ class SearchPlanner {
 
             val match = SYNONYMS[normalizeTerm(single)]
             if (match != null) {
-                positives.add(match.first)
+                positives.add(match.first())
                 synonymVariants.addAll(match.drop(1))
             } else {
                 positives.add(single)
@@ -202,7 +202,7 @@ class SearchPlanner {
         val trimmed = term.trim()
         val normalized = normalizeTerm(trimmed)
         if (normalized.isBlank()) return ""
-        return SYNONYMS[normalized]?.first ?: trimmed
+        return SYNONYMS[normalized]?.first() ?: trimmed
     }
 
     /** Gemener utan accenter – används som nyckel i ordlistan och vid jämförelser. */
