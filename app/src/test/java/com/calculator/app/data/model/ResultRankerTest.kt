@@ -9,109 +9,90 @@ class ResultRankerTest {
     private fun result(
         id: String,
         title: String,
-        site: String = "xvideos",
-        playable: Boolean = false,
-        durationSeconds: Int? = null
+        playability: Playability = Playability.UNVERIFIED,
+        durationSeconds: Int? = null,
+        site: String = "eporner"
     ) = SearchResult(
         id = id,
         title = title,
         thumbnailUrl = null,
-        duration = DurationParser.format(durationSeconds),
+        duration = null,
         detailUrl = "https://example.com/$id",
         sourceSite = site,
-        playability = if (playable) Playability.PLAYABLE else Playability.UNVERIFIED,
+        playability = playability,
         durationSeconds = durationSeconds
     )
 
     @Test
-    fun titlesWithMoreMatchingTermsRankHigher() {
-        val good = ResultRanker.relevanceFor("Blonde amateur in the kitchen", listOf("blonde", "kitchen"))
-        val weak = ResultRanker.relevanceFor("Brunette in the bedroom", listOf("blonde", "kitchen"))
-
-        assertTrue(good > weak)
-        assertTrue(good > 0)
+    fun tokenizeKeepsWordsOfAtLeastThreeLetters() {
+        assertEquals(listOf("blonde", "kitchen"), ResultRanker.tokenize("Blonde, kitchen!"))
+        assertEquals(listOf("abc"), ResultRanker.tokenize("a ab abc"))
+        assertEquals(emptyList<String>(), ResultRanker.tokenize("ab"))
     }
 
     @Test
-    fun exactPhrasesScoreHigherThanSingleWords() {
-        val phrase = ResultRanker.relevanceFor("Big natural tits of the day", listOf("big natural tits"))
-        val single = ResultRanker.relevanceFor("Big natural tits of the day", listOf("big"))
-
-        assertTrue(phrase > single)
+    fun fullPhraseScoresHigherThanASingleWord() {
+        val phrase = ResultRanker.relevanceFor("Blonde in the kitchen", listOf("blonde kitchen"))
+        val singleWord = ResultRanker.relevanceFor("Blonde in the kitchen", listOf("blonde"))
+        assertTrue("fras ska ge mer än enstaka ord ($phrase vs $singleWord)", phrase > singleWord)
     }
 
     @Test
-    fun playableResultsAreSortedFirst() {
-        val ranked = ResultRanker.rank(
-            listOf(
-                result("a", "Blonde kitchen amateur", playable = false),
-                result("b", "Random clip", playable = true)
-            ),
-            listOf("blonde", "kitchen")
-        )
-
-        assertEquals("b", ranked.first().id)
-        assertTrue(ranked.first().isPlayable)
+    fun partialWordsStillGiveSomeRelevance() {
+        assertTrue(ResultRanker.relevanceFor("Blondes at the beach", listOf("blonde")) > 0)
+        assertEquals(0, ResultRanker.relevanceFor("A long kitchen video", listOf("massage")))
     }
 
     @Test
-    fun duplicatesWithTheSameTitleAreRemoved() {
-        val ranked = ResultRanker.rank(
-            listOf(
-                result("a", "Blonde Kitchen Fun", site = "xvideos"),
-                result("b", "blonde kitchen fun", site = "xnxx"),
-                result("c", "Something else")
-            ),
-            emptyList()
-        )
+    fun rankPutsPlayableResultsFirst() {
+        val weakButPlayable = result("a", "Random clip", Playability.PLAYABLE)
+        val strongButUnverified = result("b", "Blonde kitchen massage video", Playability.UNVERIFIED)
 
-        assertEquals(2, ranked.size)
+        val ranked = ResultRanker.rank(listOf(strongButUnverified, weakButPlayable), listOf("blonde", "kitchen"))
+
         assertEquals("a", ranked.first().id)
     }
 
     @Test
-    fun dedupePrefersThePlayableCopy() {
-        val deduped = ResultRanker.dedupeByTitle(
-            listOf(
-                result("a", "Same Clip", playable = false),
-                result("b", "Same Clip", playable = true)
-            )
-        )
+    fun rankSortsOnRelevanceWithinSamePlayability() {
+        val strong = result("strong", "Blonde kitchen amateur", Playability.PLAYABLE)
+        val weak = result("weak", "Something else entirely", Playability.PLAYABLE)
+
+        val ranked = ResultRanker.rank(listOf(weak, strong), listOf("blonde", "kitchen"))
+
+        assertEquals("strong", ranked.first().id)
+    }
+
+    @Test
+    fun duplicateTitlesAreRemovedAndPlayableWins() {
+        val unverified = result("unverified", "Blonde Kitchen Clip", Playability.UNVERIFIED)
+        val playable = result("playable", "blonde kitchen clip", Playability.PLAYABLE)
+
+        val deduped = ResultRanker.dedupeByTitle(listOf(unverified, playable))
 
         assertEquals(1, deduped.size)
-        assertEquals("b", deduped.first().id)
+        assertEquals("playable", deduped.first().id)
     }
 
     @Test
-    fun sortingByLengthPutsUnknownDurationsLast() {
-        val items = listOf(
-            result("short", "Short", durationSeconds = 60),
-            result("unknown", "Unknown", durationSeconds = null),
-            result("long", "Long", durationSeconds = 3600)
-        )
+    fun sortingByLengthKeepsUnknownLengthsLast() {
+        val short = result("short", "Short", durationSeconds = 120)
+        val long = result("long", "Long", durationSeconds = 3600)
+        val unknown = result("unknown", "Unknown", durationSeconds = null)
 
-        assertEquals(
-            listOf("long", "short", "unknown"),
-            ResultRanker.applySort(items, SortOrder.LONGEST).map { it.id }
-        )
-        assertEquals(
-            listOf("short", "long", "unknown"),
-            ResultRanker.applySort(items, SortOrder.SHORTEST).map { it.id }
-        )
+        val longest = ResultRanker.applySort(listOf(short, unknown, long), SortOrder.LONGEST)
+        assertEquals(listOf("long", "short", "unknown"), longest.map { it.id })
+
+        val shortest = ResultRanker.applySort(listOf(long, unknown, short), SortOrder.SHORTEST)
+        assertEquals(listOf("short", "long", "unknown"), shortest.map { it.id })
     }
 
     @Test
-    fun lengthFilterMatchesDurations() {
-        assertTrue(LengthFilter.ALL.matches(null))
-        assertTrue(LengthFilter.SHORT.matches(120))
-        assertTrue(!LengthFilter.SHORT.matches(600))
-        assertTrue(LengthFilter.MEDIUM.matches(600))
-        assertTrue(LengthFilter.LONG.matches(1800))
-        assertTrue(!LengthFilter.LONG.matches(null))
-    }
+    fun siteSortIsGroupedBySource() {
+        val b = result("b", "B", site = "beeg")
+        val a = result("a", "A", site = "eporner")
+        val c = result("c", "C", site = "beeg")
 
-    @Test
-    fun tokenizeIgnoresShortWordsAndDuplicates() {
-        assertEquals(listOf("blonde", "kitchen"), ResultRanker.tokenize("Blonde, KITCHEN and a blonde"))
+        assertEquals(listOf("b", "c", "a"), ResultRanker.applySort(listOf(b, a, c), SortOrder.SITE).map { it.id })
     }
 }

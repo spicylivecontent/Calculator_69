@@ -39,14 +39,40 @@ jobs:
       - name: Report Gradle failure details
         if: failure() && steps.build_apk.outcome == 'failure'
         run: |
+          TESTDIR=app/build/test-results/testDebugUnitTest
           {
             echo "## Gradle build failure details"
             echo
             echo '```text'
             grep -E '(^e: | error: |FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find)' gradle-build.log | tail -n 50 || tail -n 80 gradle-build.log
             echo '```'
+            echo
+            echo "## Enhetstester"
+            echo
+            echo '```text'
+            if [ -d "$TESTDIR" ]; then
+              grep -h '<testsuite ' "$TESTDIR"/*.xml | head -n 20 || true
+              grep -h -B1 '<failure' "$TESTDIR"/*.xml | head -n 40 || true
+            else
+              echo "Inga testresultat hittades."
+            fi
+            echo '```'
+            echo
+            echo "## Testrader ur loggen"
+            echo
+            echo '```text'
+            grep -E 'FAILED|AssertionError|ComparisonFailure|expected:' gradle-build.log | head -n 60 || true
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          grep -E '(^e: | error: |FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find)' gradle-build.log | tail -n 50 | while IFS= read -r line; do
+
+          # Korta annotations så att felen syns direkt i check-run-fliken.
+          {
+            grep -E '^e: ' gradle-build.log | head -n 8
+            if [ -d "$TESTDIR" ]; then
+              grep -h -B1 '<failure' "$TESTDIR"/*.xml | head -n 20
+            fi
+            grep -E 'FAILED|AssertionError|ComparisonFailure|expected:' gradle-build.log | head -n 20
+          } | awk '!seen[$0]++' | head -n 30 | while IFS= read -r line; do
             line=${line//'%'/'%25'}
             line=${line//$'\r'/'%0D'}
             echo "::error title=Gradle diagnostic::$line"

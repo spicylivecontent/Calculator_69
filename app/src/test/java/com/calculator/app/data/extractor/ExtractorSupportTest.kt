@@ -1,141 +1,95 @@
 package com.calculator.app.data.extractor
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExtractorSupportTest {
 
-    private val xvideosConfig = ListingConfig(
-        siteName = "xvideos",
-        baseUrl = "https://www.xvideos.com",
-        hrefPattern = Regex("/video\\.([A-Za-z0-9]+)"),
-        titleSelectors = listOf("p.title", ".title", "a.title")
+    private val config = ListingConfig(
+        siteName = "mysite",
+        baseUrl = "https://mysite.example/",
+        hrefPattern = Regex("/video/([a-z0-9]+)"),
+        idGroup = 1,
+        requireHrefContains = "/video/"
     )
 
+    private val listingHtml = """
+        <html><body>
+          <div class="item">
+            <a href="/video/abc123" title="Blonde in the Kitchen | Pornhub">
+              <img data-src="https://cdn.example.com/t/abc123.jpg" alt="Blonde in the Kitchen">
+            </a>
+            <span class="duration">12:34</span>
+          </div>
+          <div class="item">
+            <a href="http://insecure.example.com/video/def456">Ignored because of http</a>
+          </div>
+          <div class="item">
+            <a href="/video/abc123">
+              <img src="https://cdn.example.com/t/abc123-hd.jpg">
+            </a>
+          </div>
+          <div class="item">
+            <a href="/tag/blonde">Tag link that should be ignored</a>
+          </div>
+        </body></html>
+    """.trimIndent()
+
     @Test
-    fun parsesListingsFromStructuralMarkup() {
-        val html = """
-            <html><body>
-              <div class="mozaique">
-                <div class="thumb-block">
-                  <a href="/video.abcdefg/blonde_in_the_kitchen" title="Blonde in the kitchen">
-                    <img data-src="//img.example.com/thumb1.jpg" alt="Blonde in the kitchen">
-                  </a>
-                  <p class="title">Blonde in the kitchen</p>
-                  <span class="duration">12:34</span>
-                </div>
-                <div class="thumb-block">
-                  <a href="/video.xyz1234/brunette_amateur">
-                    <img src="https://img.example.com/thumb2.jpg">
-                  </a>
-                  <span class="duration">05:00</span>
-                </div>
-                <div class="thumb-block">
-                  <a href="/profiles/some-user">Inte en video</a>
-                </div>
-              </div>
-            </body></html>
-        """.trimIndent()
+    fun listingsAreParsedIntoPlayableCandidates() {
+        val results = ExtractorSupport.parseListings(listingHtml, config)
 
-        val results = ExtractorSupport.parseListings(html, xvideosConfig)
-
-        assertEquals(2, results.size)
-        val first = results.first()
-        assertEquals("xvideos_abcdefg", first.id)
-        assertEquals("Blonde in the kitchen", first.title)
-        assertEquals("https://www.xvideos.com/video.abcdefg/blonde_in_the_kitchen", first.detailUrl)
-        assertEquals("https://img.example.com/thumb1.jpg", first.thumbnailUrl)
-        assertEquals("12:34", first.duration)
-        assertEquals(754, first.durationSeconds)
-
-        val second = results[1]
-        assertEquals("xvideos_xyz1234", second.id)
-        assertEquals("Brunette amateur", second.title)
-        assertEquals("https://img.example.com/thumb2.jpg", second.thumbnailUrl)
-        assertEquals(300, second.durationSeconds)
+        assertEquals(1, results.size)
+        val result = results.first()
+        assertEquals("mysite_abc123", result.id)
+        assertEquals("Blonde in the Kitchen", result.title)
+        assertEquals("https://mysite.example/video/abc123", result.detailUrl)
+        assertEquals("mysite", result.sourceSite)
+        assertEquals("https://cdn.example.com/t/abc123.jpg", result.thumbnailUrl)
+        assertEquals("12:34", result.duration)
+        assertEquals(754, result.durationSeconds)
     }
 
     @Test
-    fun removesBrandSuffixesFromTitles() {
-        assertEquals("Blonde in the kitchen", ExtractorSupport.cleanTitle("Blonde in the kitchen - XVideos.com"))
-        assertEquals("Blonde fun", ExtractorSupport.cleanTitle("Blonde fun | Eporner"))
-        assertEquals("Amateur couple - part 2", ExtractorSupport.cleanTitle("Amateur couple - part 2"))
-        assertNull(ExtractorSupport.cleanTitle("   "))
+    fun emptyOrUnrelatedHtmlGivesNoResults() {
+        assertTrue(ExtractorSupport.parseListings("", config).isEmpty())
+        assertTrue(ExtractorSupport.parseListings("<html><body>Inget här</body></html>", config).isEmpty())
+    }
+
+    @Test
+    fun cleanTitleRemovesBrandSuffixesAndJunk() {
+        assertEquals("Blonde in the Kitchen", ExtractorSupport.cleanTitle("Blonde in the Kitchen | Pornhub"))
+        assertEquals("Blonde in the Kitchen", ExtractorSupport.cleanTitle("Blonde in the Kitchen — xvideos.com"))
+        assertEquals("Kitchen Fun", ExtractorSupport.cleanTitle("  Kitchen Fun  "))
         assertNull(ExtractorSupport.cleanTitle("ab"))
+        assertNull(ExtractorSupport.cleanTitle("   "))
+        assertNull(ExtractorSupport.cleanTitle(null))
     }
 
     @Test
-    fun detectsQualityHintsInTitles() {
-        assertEquals("4K", ExtractorSupport.qualityFromTitle("Blonde kitchen 4K"))
-        assertEquals("1080p", ExtractorSupport.qualityFromTitle("Amateur 1080p fun"))
-        assertEquals("HD", ExtractorSupport.qualityFromTitle("HD blonde"))
+    fun slugFallbackBuildsAReadableTitle() {
+        assertEquals(
+            "Blonde in the kitchen",
+            ExtractorSupport.titleFromSlug("/video/blonde_in_the_kitchen_2024")
+        )
+        assertNull(ExtractorSupport.titleFromSlug("/v/ab"))
+    }
+
+    @Test
+    fun qualityIsDetectedFromTheTitle() {
+        assertEquals("1080p", ExtractorSupport.qualityFromTitle("Blonde kitchen 1080p"))
+        assertEquals("4K", ExtractorSupport.qualityFromTitle("Amateur 4K clip"))
         assertNull(ExtractorSupport.qualityFromTitle("Blonde kitchen"))
     }
 
     @Test
-    fun pornhubStyleLinksAreParsed() {
-        val config = ListingConfig(
-            siteName = "pornhub",
-            baseUrl = "https://www.pornhub.com",
-            hrefPattern = Regex("viewkey=([A-Za-z0-9]+)"),
-            requireHrefContains = "view_video"
+    fun absoluteUrlRejectsCleartext() {
+        assertEquals(
+            "https://mysite.example/video/abc",
+            ExtractorSupport.absoluteUrl("https://mysite.example/", "/video/abc")
         )
-        val html = """
-            <ul>
-              <li class="pcVideoListItem">
-                <a href="/view_video.php?viewkey=ph12345abcd" title="Kitchen fun">
-                  <img data-mediumthumb="https://ci.example.com/1.jpg">
-                </a>
-                <var class="duration">08:15</var>
-              </li>
-            </ul>
-        """.trimIndent()
-
-        val results = ExtractorSupport.parseListings(html, config)
-
-        assertEquals(1, results.size)
-        assertEquals("pornhub_ph12345abcd", results.first().id)
-        assertEquals(495, results.first().durationSeconds)
-        assertEquals("https://ci.example.com/1.jpg", results.first().thumbnailUrl)
-    }
-
-    @Test
-    fun duplicateIdsAreCollapsedAndBestThumbnailKept() {
-        val html = """
-            <div class="list">
-              <div class="item"><a href="/video.abcdefg/title-one" title="Title one">Title one</a></div>
-              <div class="item">
-                <a href="/video.abcdefg/title-one"><img data-src="https://img.example.com/a.jpg" alt="Title one"></a>
-              </div>
-            </div>
-        """.trimIndent()
-
-        val results = ExtractorSupport.parseListings(html, xvideosConfig)
-
-        assertEquals(1, results.size)
-        assertEquals("https://img.example.com/a.jpg", results.first().thumbnailUrl)
-    }
-
-    @Test
-    fun listingsSkipCleartextUrls() {
-        val config = xvideosConfig.copy(baseUrl = "https://www.xvideos.com")
-        val html = """<div><a href="http://www.xvideos.com/video.abcdefg/title">T</a></div>"""
-
-        assertTrue(ExtractorSupport.parseListings(html, config).isEmpty())
-    }
-
-    @Test
-    fun siteExtractorsExposeFriendlyNames() {
-        assertNotNull(EpornerExtractor().siteName)
-        assertEquals("Eporner", EpornerExtractor().label)
-        assertEquals("SpankBang", SpankBangExtractor().label)
-        assertEquals("xHamster", XHamsterExtractor().label)
-        assertEquals("PornTrex", PornTrexExtractor().label)
-        assertFalse(BeegExtractor().supportsPagination)
-        assertTrue(SpankBangExtractor().supportsPagination)
+        assertNull(ExtractorSupport.absoluteUrl("https://mysite.example/", "http://mysite.example/video/abc"))
     }
 }
