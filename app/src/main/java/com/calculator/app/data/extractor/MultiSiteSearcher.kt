@@ -5,41 +5,43 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
 /**
- * Söker parallellt på flera sajter och blandar resultaten.
+ * Söker parallellt på alla stödda sajter och blandar resultaten.
  */
 class MultiSiteSearcher {
 
     private val extractors: List<SiteExtractor> = listOf(
         EpornerExtractor(),
         SpankBangExtractor(),
-        HQpornerExtractor()
+        HQpornerExtractor(),
+        XVideosExtractor(),
+        XnxxExtractor(),
+        XHamsterExtractor(),
+        PornhubExtractor(),
+        BeegExtractor(),
+        YouPornExtractor(),
+        PornTrexExtractor()
     )
 
     suspend fun search(query: String): List<SearchResult> = coroutineScope {
         if (query.isBlank()) return@coroutineScope emptyList()
 
-        // Kör alla extractors parallellt
         val deferred = extractors.map { extractor ->
             async {
                 try {
                     extractor.search(query)
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     emptyList()
                 }
             }
         }
 
-        // Samla och blanda resultaten (round-robin så en sajt inte dominerar)
         val allResults = deferred.map { it.await() }
-
         val mixed = mutableListOf<SearchResult>()
         val maxSize = allResults.maxOfOrNull { it.size } ?: 0
 
         for (i in 0 until maxSize) {
             for (list in allResults) {
-                if (i < list.size) {
-                    mixed.add(list[i])
-                }
+                if (i < list.size) mixed.add(list[i])
             }
         }
 

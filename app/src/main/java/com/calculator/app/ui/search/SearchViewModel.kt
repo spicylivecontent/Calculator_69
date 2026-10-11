@@ -10,6 +10,7 @@ import com.calculator.app.ai.QueryExpander
 import com.calculator.app.data.Repository
 import com.calculator.app.data.entity.VideoEntity
 import com.calculator.app.data.extractor.MultiSiteSearcher
+import com.calculator.app.data.extractor.StreamResolver
 import com.calculator.app.data.model.SearchResult
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -38,8 +39,15 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var aiExplanation by mutableStateOf<String?>(null)
         private set
 
-    // Senaste sökresultat sparas som "feed" för Home
     var lastFeed by mutableStateOf<List<SearchResult>>(emptyList())
+        private set
+
+    // Video som ska spelas
+    var playingUrl by mutableStateOf<String?>(null)
+        private set
+    var playingTitle by mutableStateOf("")
+        private set
+    var isResolvingStream by mutableStateOf(false)
         private set
 
     val supportedSites: List<String> = searcher.getSupportedSites()
@@ -84,19 +92,16 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 }
 
                 results = filtered
-                lastFeed = filtered   // Uppdatera feed för Home
+                lastFeed = filtered
 
-                // Spara metadata i databasen så Library kan använda den
-                filtered.take(30).forEach { r ->
+                filtered.take(40).forEach { r ->
                     repository.insertVideo(
                         VideoEntity(
                             id = r.id,
                             title = r.title,
                             thumbnailUrl = r.thumbnailUrl,
-                            durationSeconds = null,
                             sourceSite = r.sourceSite,
-                            detailPageUrl = r.detailUrl,
-                            tags = ""
+                            detailPageUrl = r.detailUrl
                         )
                     )
                 }
@@ -117,9 +122,33 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun playVideo(result: SearchResult) {
+        viewModelScope.launch {
+            isResolvingStream = true
+            errorMessage = null
+            try {
+                val streamUrl = StreamResolver.resolve(result.detailUrl, result.sourceSite)
+                if (streamUrl != null) {
+                    playingUrl = streamUrl
+                    playingTitle = result.title
+                } else {
+                    errorMessage = "Kunde inte hitta stream för denna video (${result.sourceSite})"
+                }
+            } catch (e: Exception) {
+                errorMessage = "Fel vid stream-extract: ${e.message}"
+            } finally {
+                isResolvingStream = false
+            }
+        }
+    }
+
+    fun closePlayer() {
+        playingUrl = null
+        playingTitle = ""
+    }
+
     fun addFavorite(result: SearchResult) {
         viewModelScope.launch {
-            // Se till att videon finns i videos-tabellen
             repository.insertVideo(
                 VideoEntity(
                     id = result.id,
@@ -156,11 +185,5 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 !it.title.lowercase().contains(keyword.trim().lowercase())
             }
         }
-    }
-
-    fun clearResults() {
-        results = emptyList()
-        errorMessage = null
-        aiExplanation = null
     }
 }
