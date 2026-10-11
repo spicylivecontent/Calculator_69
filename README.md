@@ -3,30 +3,31 @@
 Diskret miniräknar-app
 
 ## Status
-- ✅ Steg 1–10: Setup → Multi-site scraping
-- ✅ Steg 11: Avancerad filtrering
+- ✅ Steg 1–11
+- ✅ Steg 12: On-device AI-sökexpander
 
-## Filtrering (Steg 11)
+## On-device AI (Steg 12)
 
-### Tillfälliga negativa filter
-I Search-fliken finns ett rött fält:
+En **lättvikts, helt lokal** query-expander som:
+
+- Tolkar naturligt språk (`brunette pov slow, no anal, no rough`)
+- Extraherar **positiva** söktermer (+ enkla synonymer)
+- Extraherar **negativa** termer automatiskt (`no X`, `utan X`, `never X`)
+- Visar en kort förklaring under sökfältet
+- Kör 100 % on-device – ingen molntjänst, ingen stor modell
+
+### Exempel
 ```
-Exkludera (kommaseparerat): anal, rough, ...
+Input:  brunette in kitchen pov, no anal, no rough
+AI:     söker “brunette brown hair dark hair kitchen cooking pov ...”
+        filtrerar bort: anal, rough
 ```
-Alla resultat vars titel innehåller något av orden filtreras bort direkt.
 
-### Permanent "Never show again"
-Varje resultatkort har en röd block-ikon.
-Tryck på den → ordet sparas i databasen som en permanent regel och försvinner från listan.
-
-### Hur det fungerar
-1. Sökningen hämtar rådata från Eporner + SpankBang + HQporner
-2. Resultaten körs genom dina negativa regler (UI + databas)
-3. Endast rena träffar visas
+Strukturen är förberedd så att man senare kan byta ut `QueryExpander` mot en riktig TFLite/ONNX-modell utan att ändra resten av appen.
 
 ## PIN-koder
 - **6969** + biometri → Riktiga vaulten
 - **1234** → Decoy-vault
 
 ## Nästa steg
-Steg 12: AI-sök & semantisk expansion (valfritt / mer avancerat)
+Steg 13: Unified Feed + Library + Rekommendationer (eller polering)

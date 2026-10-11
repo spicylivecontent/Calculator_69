@@ -143,10 +143,10 @@ private fun HomeTab(onLock: () -> Unit, onPlayTest: () -> Unit) {
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Text("Filter aktivt", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("On-device AI-sök aktiv", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Du kan nu ange negativa nyckelord i Search-fliken.\nResultat som innehåller de orden filtreras bort automatiskt.",
+                    "Skriv naturligt språk, t.ex.:\n\"brunette pov slow, no anal, no rough\"\n\nAppen tolkar positivt/negativt lokalt och filtrerar automatiskt.",
                     color = Color(0xFF90A4AE),
                     fontSize = 14.sp
                 )
@@ -167,7 +167,7 @@ private fun SearchTab() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Huvudsökfält
+        // Huvudsökfält – naturligt språk
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -176,7 +176,7 @@ private fun SearchTab() {
                 value = viewModel.query,
                 onValueChange = { viewModel.onQueryChange(it) },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Vad du vill se...", color = Color(0xFF78909C)) },
+                placeholder = { Text("brunette pov slow, no anal...", color = Color(0xFF78909C)) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFF00E676),
                     unfocusedBorderColor = Color(0xFF37474F),
@@ -205,12 +205,12 @@ private fun SearchTab() {
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Negativa filter
+        // Extra manuella negativa filter
         OutlinedTextField(
             value = viewModel.negativeKeywords,
             onValueChange = { viewModel.onNegativeKeywordsChange(it) },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Exkludera (kommaseparerat): anal, rough, ...", color = Color(0xFF78909C)) },
+            placeholder = { Text("Extra exkludera (valfritt): rough, tattoo...", color = Color(0xFF78909C)) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Color(0xFFFF5252),
                 unfocusedBorderColor = Color(0xFF37474F),
@@ -222,11 +222,21 @@ private fun SearchTab() {
             singleLine = true
         )
 
+        // AI-förklaring
+        viewModel.aiExplanation?.let { explanation ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = explanation,
+                color = Color(0xFF80CBC4),
+                fontSize = 12.sp
+            )
+        }
+
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            "Källor: ${viewModel.supportedSites.joinToString(", ")}",
+            "Källor: ${viewModel.supportedSites.joinToString(", ")}  •  On-device AI",
             color = Color(0xFF607D8B),
-            fontSize = 12.sp
+            fontSize = 11.sp
         )
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -301,10 +311,8 @@ private fun SearchResultCard(
                 }
             }
 
-            // Never show again-knapp
             IconButton(
                 onClick = {
-                    // Ta första meningsfulla ordet från titeln som regel
                     val word = result.title.split(" ")
                         .map { it.trim().lowercase() }
                         .firstOrNull { it.length > 3 } ?: result.title.take(12)
@@ -368,7 +376,7 @@ private fun SettingsTab(onLock: () -> Unit) {
         Spacer(modifier = Modifier.height(12.dp))
         SettingsItem("Biometri", "Kräv fingeravtryck/ansikte")
         Spacer(modifier = Modifier.height(12.dp))
-        SettingsItem("Exkluderingsregler", "Hantera Never-show-regler (kommer)")
+        SettingsItem("Exkluderingsregler", "Hantera Never-show-regler")
         Spacer(modifier = Modifier.height(32.dp))
         Button(
             onClick = onLock,

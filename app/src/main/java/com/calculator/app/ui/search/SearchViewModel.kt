@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.calculator.app.ai.QueryExpander
 import com.calculator.app.data.Repository
 import com.calculator.app.data.extractor.MultiSiteSearcher
 import com.calculator.app.data.model.SearchResult
@@ -16,6 +17,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     private val searcher = MultiSiteSearcher()
     private val repository = Repository(application)
+    private val expander = QueryExpander()          // On-device lättvikts-AI
 
     var query by mutableStateOf("")
         private set
@@ -29,14 +31,19 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
-    // Globala negativa nyckelord (kommaseparerade eller en per rad)
+    // Tillfälliga negativa nyckelord från UI
     var negativeKeywords by mutableStateOf("")
+        private set
+
+    // Förklaring från expandern (visas för användaren)
+    var aiExplanation by mutableStateOf<String?>(null)
         private set
 
     val supportedSites: List<String> = searcher.getSupportedSites()
 
     fun onQueryChange(newQuery: String) {
         query = newQuery
+        aiExplanation = null
     }
 
     fun onNegativeKeywordsChange(value: String) {
@@ -49,29 +56,38 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             isLoading = true
             errorMessage = null
+            aiExplanation = null
+
             try {
-                // 1. Hämta råresultat från alla sajter
-                val raw = searcher.search(query)
+                // === 1. On-device expansion ===
+                val expanded = expander.expand(query)
+                aiExplanation = expanded.explanation
 
-                // 2. Hämta sparade dislike-regler från databasen
-                val rules = repository.getDislikeRules().first()
+                val searchTerms = expanded.searchTerms
 
-                // 3. Bygg lista av förbjudna ord (från UI + databas)
+                // === 2. Hämta rådata ===
+                val raw = searcher.search(searchTerms)
+
+                // === 3. Samla alla negativa regler ===
                 val blocked = mutableSetOf<String>()
 
-                // Från det tillfälliga filterfältet
+                // Från AI-expandern
+                expanded.negativeKeywords.forEach { blocked.add(it.lowercase()) }
+
+                // Från UI-fältet
                 negativeKeywords
                     .split(",", "\n")
                     .map { it.trim().lowercase() }
                     .filter { it.isNotBlank() }
                     .forEach { blocked.add(it) }
 
-                // Från sparade regler (keyword + tag)
+                // Från databasen (permanenta Never-show-regler)
+                val rules = repository.getDislikeRules().first()
                 rules
                     .filter { it.type == "keyword" || it.type == "tag" }
                     .forEach { blocked.add(it.value.lowercase()) }
 
-                // 4. Filtrera resultaten
+                // === 4. Filtrera ===
                 val filtered = raw.filter { result ->
                     val titleLower = result.title.lowercase()
                     blocked.none { bad -> titleLower.contains(bad) }
@@ -95,12 +111,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Lägg till en permanent "Never show again"-regel */
     fun addNeverShowAgain(keyword: String) {
         if (keyword.isBlank()) return
         viewModelScope.launch {
             repository.addDislikeRule(type = "keyword", value = keyword.trim().lowercase())
-            // Uppdatera aktuella resultat direkt
             results = results.filter {
                 !it.title.lowercase().contains(keyword.trim().lowercase())
             }
@@ -110,5 +124,6 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     fun clearResults() {
         results = emptyList()
         errorMessage = null
+        aiExplanation = null
     }
 }
