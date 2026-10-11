@@ -6,11 +6,17 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import net.objecthunter.exp4j.ExpressionBuilder
 
+enum class VaultMode {
+    NONE,           // Miniräknare
+    REAL,           // Riktiga vaulten
+    DECOY           // Falsk/tom vault
+}
+
 class CalculatorViewModel : ViewModel() {
 
-    // === PIN-inställning (kan ändras senare i Settings) ===
-    // Standard-PIN: 6969
-    private var secretPin: String = "6969"
+    // === PIN-inställningar ===
+    private var realPin: String = "6969"      // Riktiga koden
+    private var decoyPin: String = "1234"     // Decoy-kod (öppnar tom vault)
 
     var input by mutableStateOf("")
         private set
@@ -21,15 +27,19 @@ class CalculatorViewModel : ViewModel() {
     var history by mutableStateOf<List<String>>(emptyList())
         private set
 
-    // true när rätt PIN har angetts
-    var isVaultUnlocked by mutableStateOf(false)
+    var vaultMode by mutableStateOf(VaultMode.NONE)
         private set
+
+    // Används för att trigga biometrisk prompt från UI
+    var shouldShowBiometric by mutableStateOf(false)
+        private set
+
+    // Spara vilken typ av unlock som väntar på biometri
+    private var pendingVaultMode: VaultMode = VaultMode.NONE
 
     fun onAction(action: CalculatorAction) {
         when (action) {
-            is CalculatorAction.Number -> {
-                input += action.number
-            }
+            is CalculatorAction.Number -> input += action.number
             is CalculatorAction.Operation -> {
                 if (input.isNotEmpty() && !isLastCharOperator()) {
                     input += action.operation
@@ -40,9 +50,7 @@ class CalculatorViewModel : ViewModel() {
                 result = ""
             }
             is CalculatorAction.Delete -> {
-                if (input.isNotEmpty()) {
-                    input = input.dropLast(1)
-                }
+                if (input.isNotEmpty()) input = input.dropLast(1)
             }
             is CalculatorAction.Decimal -> {
                 if (input.isEmpty() || isLastCharOperator()) {
@@ -51,16 +59,13 @@ class CalculatorViewModel : ViewModel() {
                     input += "."
                 }
             }
-            is CalculatorAction.Calculate -> {
-                performCalculation()
-            }
+            is CalculatorAction.Calculate -> performCalculation()
         }
     }
 
     private fun isLastCharOperator(): Boolean {
         if (input.isEmpty()) return true
-        val last = input.last()
-        return last in listOf('+', '-', '*', '/', '%')
+        return input.last() in listOf('+', '-', '*', '/', '%')
     }
 
     private fun currentNumberHasDecimal(): Boolean {
@@ -71,50 +76,71 @@ class CalculatorViewModel : ViewModel() {
     private fun performCalculation() {
         if (input.isBlank()) return
 
-        // === HEMLIG PIN-KOLL ===
-        // Om användaren bara skrivit PIN-koden (inga operatorer) och trycker =
-        if (input == secretPin) {
-            // Rensa allt och lås upp vaulten
-            input = ""
-            result = ""
-            isVaultUnlocked = true
-            return
-        }
-
-        // Vanlig beräkning
-        try {
-            val expression = ExpressionBuilder(input).build()
-            val res = expression.evaluate()
-
-            val finalResult = if (res == res.toLong().toDouble()) {
-                res.toLong().toString()
-            } else {
-                String.format("%.8f", res).trimEnd('0').trimEnd('.')
+        when (input) {
+            realPin -> {
+                // Rätt PIN → begär biometri för riktiga vaulten
+                input = ""
+                result = ""
+                pendingVaultMode = VaultMode.REAL
+                shouldShowBiometric = true
             }
+            decoyPin -> {
+                // Decoy-PIN → öppna tom vault direkt (ingen biometri)
+                input = ""
+                result = ""
+                vaultMode = VaultMode.DECOY
+            }
+            else -> {
+                // Vanlig beräkning
+                try {
+                    val expression = ExpressionBuilder(input).build()
+                    val res = expression.evaluate()
 
-            result = finalResult
+                    val finalResult = if (res == res.toLong().toDouble()) {
+                        res.toLong().toString()
+                    } else {
+                        String.format("%.8f", res).trimEnd('0').trimEnd('.')
+                    }
 
-            val entry = "$input = $finalResult"
-            history = (history + entry).takeLast(15)
-
-            input = finalResult
-
-        } catch (e: Exception) {
-            result = "Error"
+                    result = finalResult
+                    history = (history + "$input = $finalResult").takeLast(15)
+                    input = finalResult
+                } catch (e: Exception) {
+                    result = "Error"
+                }
+            }
         }
     }
 
-    /** Anropas när man vill stänga vaulten och gå tillbaka till miniräknaren */
+    /** Anropas när biometrisk autentisering lyckas */
+    fun onBiometricSuccess() {
+        shouldShowBiometric = false
+        vaultMode = pendingVaultMode
+        pendingVaultMode = VaultMode.NONE
+    }
+
+    /** Anropas när biometrisk autentisering misslyckas eller avbryts */
+    fun onBiometricFailedOrCancelled() {
+        shouldShowBiometric = false
+        pendingVaultMode = VaultMode.NONE
+        // Stanna kvar i miniräknarläge
+    }
+
     fun lockVault() {
-        isVaultUnlocked = false
+        vaultMode = VaultMode.NONE
         input = ""
         result = ""
     }
 
-    /** Tillåter att ändra PIN senare (används i Settings) */
-    fun updatePin(newPin: String) {
+    fun updateRealPin(newPin: String) {
         if (newPin.length in 4..12 && newPin.all { it.isDigit() }) {
-            secretPin = newPin
+            realPin = newPin
+        }
+    }
+
+    fun updateDecoyPin(newPin: String) {
+        if (newPin.length in 4..12 && newPin.all { it.isDigit() }) {
+            decoyPin = newPin
         }
     }
 }

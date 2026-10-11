@@ -49,8 +49,11 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
 
-    // Math engine (open source)
+    // Math engine
     implementation("net.objecthunter:exp4j:0.4.8")
+
+    // Biometric
+    implementation("androidx.biometric:biometric:1.1.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

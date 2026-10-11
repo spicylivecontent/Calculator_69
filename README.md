@@ -3,15 +3,26 @@
 Diskret miniräknar-app
 
 ## Status
-- ✅ Steg 1: Projektsetup klar
-- ✅ Steg 2: Fullt fungerande miniräknare klar
-- ✅ Steg 3: Hemlig PIN-unlock klar
+- ✅ Steg 1: Projektsetup
+- ✅ Steg 2: Fullt fungerande miniräknare
+- ✅ Steg 3: Hemlig PIN-unlock
+- ✅ Steg 4: Biometrisk autentisering + decoy-PIN
 
-## Hur man låser upp vaulten
-Skriv **6969** och tryck på **=**
+## Hur man använder
 
-Då öppnas en tillfällig Vault-placeholder.
-Tryck på den röda knappen för att låsa igen.
+### Riktiga vaulten
+1. Skriv **6969**
+2. Tryck **=**
+3. Bekräfta med fingeravtryck / ansikte
+4. Vaulten öppnas
+
+### Decoy-vault (falsk)
+1. Skriv **1234**
+2. Tryck **=**
+3. En tom "Private Notes"-skärm öppnas (ingen biometri)
+
+### Lås igen
+Tryck på knappen i vaulten.
 
 ## Nästa steg
-Steg 4: Biometrisk autentisering + decoy-PIN
+Steg 5: Diskretion & säkerhetsflaggor (FLAG_SECURE, excludeFromRecents, panic m.m.)
