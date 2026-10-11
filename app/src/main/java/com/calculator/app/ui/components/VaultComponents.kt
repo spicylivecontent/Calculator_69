@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.WatchLater
 import androidx.compose.material3.Card
@@ -39,6 +40,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,11 +51,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.request.ImageRequest
 import com.calculator.app.data.RecentPlayback
 import com.calculator.app.data.model.Playability
 import com.calculator.app.data.model.SearchResult
@@ -96,14 +103,45 @@ fun Thumbnail(
     modifier: Modifier = Modifier,
     contentDescription: String? = null
 ) {
-    Box(modifier = modifier.clip(RoundedCornerShape(12.dp))) {
-        ShimmerBox(Modifier.fillMaxSize())
+    val context = LocalContext.current
+    var state by remember(url) { mutableStateOf<AsyncImagePainter.State?>(null) }
+    val loading = url.isNullOrBlank() || state !is AsyncImagePainter.State.Success
+
+    Box(modifier = modifier.clip(RoundedCornerShape(12.dp)).background(VaultSurfaceHigh)) {
+        if (url.isNullOrBlank()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Movie,
+                    contentDescription = null,
+                    tint = VaultTextSecondary,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            return@Box
+        }
+
+        if (loading) {
+            ShimmerBox(Modifier.fillMaxSize())
+        }
+
         AsyncImage(
-            model = url,
+            model = ImageRequest.Builder(context).data(url).crossfade(true).build(),
             contentDescription = contentDescription,
             contentScale = ContentScale.Crop,
+            onState = { newState -> state = newState },
             modifier = Modifier.fillMaxSize()
         )
+
+        if (state is AsyncImagePainter.State.Error) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Movie,
+                    contentDescription = null,
+                    tint = VaultTextSecondary,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
     }
 }
 

@@ -67,7 +67,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -155,6 +157,7 @@ fun VideoPlayerScreen(
     val context = LocalContext.current
     val activity = context as? Activity
     val view = LocalView.current
+    val haptics = LocalHapticFeedback.current
 
     // Fullskärm: dölj systemfälten så länge spelaren är öppen.
     DisposableEffect(activity) {
@@ -451,12 +454,14 @@ fun VideoPlayerScreen(
                                 seekTo(positionMs - skipSeconds * 1_000L)
                                 feedback = OverlayFeedback("−${skipSeconds}s", Icons.Default.FastRewind)
                                 showControls = true
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
 
                             offset.x > width * 0.6f -> if (durationMs > 0L) {
                                 seekTo(positionMs + skipSeconds * 1_000L)
                                 feedback = OverlayFeedback("+${skipSeconds}s", Icons.Default.FastForward)
                                 showControls = true
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
 
                             else -> {
@@ -487,6 +492,7 @@ fun VideoPlayerScreen(
                                     scrubTargetMs = positionMs
                                     accumulated = 0f
                                     exoPlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 },
                                 onHorizontalDrag = { change, dragAmount ->
                                     change.consume()
@@ -845,7 +851,11 @@ private fun PlayerCenterControls(
                 enabled = seekEnabled,
                 modifier = Modifier.size(56.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
             ) {
-                Icon(Icons.Default.Replay10, contentDescription = "Tillbaka $skipSeconds sekunder", tint = Color.White)
+                Icon(
+                    imageVector = if (skipSeconds == 10) Icons.Default.Replay10 else Icons.Default.FastRewind,
+                    contentDescription = "Tillbaka $skipSeconds sekunder",
+                    tint = Color.White
+                )
             }
 
             IconButton(
@@ -865,7 +875,11 @@ private fun PlayerCenterControls(
                 enabled = seekEnabled,
                 modifier = Modifier.size(56.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
             ) {
-                Icon(Icons.Default.Forward10, contentDescription = "Framåt $skipSeconds sekunder", tint = Color.White)
+                Icon(
+                    imageVector = if (skipSeconds == 10) Icons.Default.Forward10 else Icons.Default.FastForward,
+                    contentDescription = "Framåt $skipSeconds sekunder",
+                    tint = Color.White
+                )
             }
 
             if (hasNext && onNext != null) {

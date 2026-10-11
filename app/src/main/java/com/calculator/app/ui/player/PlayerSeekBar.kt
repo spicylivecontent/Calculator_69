@@ -110,7 +110,12 @@ fun PlayerSeekBar(
         )
 
         val thumbRadius = if (isDragging) 11.dp.toPx() else 7.dp.toPx()
-        val thumbX = (size.width * shownFraction).coerceIn(thumbRadius, size.width - thumbRadius)
+        // Skydda mot extremt smal yta (t.ex. första mätningen) så att coerceIn aldrig får ett tomt intervall.
+        val thumbX = if (size.width > thumbRadius * 2f) {
+            (size.width * shownFraction).coerceIn(thumbRadius, size.width - thumbRadius)
+        } else {
+            size.width * shownFraction
+        }
         drawCircle(color = accent.copy(alpha = 0.25f), radius = thumbRadius * 1.7f, center = Offset(thumbX, centerY))
         drawCircle(color = Color.White, radius = thumbRadius, center = Offset(thumbX, centerY))
         drawCircle(color = accent, radius = thumbRadius * 0.55f, center = Offset(thumbX, centerY))
