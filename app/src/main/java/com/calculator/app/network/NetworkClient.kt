@@ -11,6 +11,7 @@ object NetworkClient {
 
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .callTimeout(20, TimeUnit.SECONDS)
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(12, TimeUnit.SECONDS)
             .writeTimeout(12, TimeUnit.SECONDS)

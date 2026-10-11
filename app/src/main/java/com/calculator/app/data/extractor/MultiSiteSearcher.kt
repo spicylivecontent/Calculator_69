@@ -1,6 +1,7 @@
 package com.calculator.app.data.extractor
 
 import com.calculator.app.data.model.SearchResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
@@ -29,6 +30,8 @@ class MultiSiteSearcher {
             async {
                 try {
                     extractor.search(query)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                     emptyList()
                 }

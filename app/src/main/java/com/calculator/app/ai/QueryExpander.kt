@@ -1,34 +1,26 @@
 package com.calculator.app.ai
 
+import java.util.Locale
+
 /**
- * Lättvikts on-device "AI"-expander.
- * Körs 100 % lokalt – ingen molntjänst, ingen stor modell.
- *
- * Den tolkar naturligt språk, plockar ut:
- * - Positiva söktermer
- * - Negativa / förbjudna termer
- * - Stil / kvalitet / längd-hints
- *
- * Resultatet används för att bygga en renare sökfråga + filter.
- *
- * Senare kan denna klass bytas ut mot en riktig TFLite / ONNX-modell
- * utan att ändra resten av appen.
+ * Rule-based query expander that runs entirely on-device.
+ * It separates positive terms from explicit exclusions and blocks
+ * age-related terms in this adult-content search experience.
  */
 class QueryExpander {
 
     data class ExpandedQuery(
         val searchTerms: String,          // Det som skickas till sajterna
         val negativeKeywords: List<String>, // Extra filter
-        val preferredQuality: String? = null,
-        val maxDurationMinutes: Int? = null,
-        val explanation: String           // Kort förklaring till användaren
+        val explanation: String,           // Kort förklaring till användaren
+        val blockedReason: String? = null
     )
 
     // Vanliga negativa mönster (svenska + engelska)
     private val negativePatterns = listOf(
         "no ", "not ", "utan ", "ingen ", "inte ", "without ", "exclude ",
         "absolut inte ", "aldrig ", "never ", "förbjudet ", "undvik "
-    )
+    ).sortedByDescending { it.length }
 
     // Synonymer / expansioner (positiv intent)
     private val expansions = mapOf(
@@ -42,25 +34,34 @@ class QueryExpander {
         "kitchen" to listOf("kitchen", "cooking"),
         "outdoor" to listOf("outdoor", "outside", "public"),
         "natural" to listOf("natural", "no makeup"),
-        "young" to listOf("young", "teen", "18+"),
         "milf" to listOf("milf", "mature", "mom"),
         "lesbian" to listOf("lesbian", "girl on girl", "gg"),
         "solo" to listOf("solo", "masturbation"),
         "couple" to listOf("couple", "boyfriend", "girlfriend")
     )
 
-    // Ord som oftast är negativa när de dyker upp efter "no/utan/..."
-    private val commonNegatives = setOf(
-        "anal", "rough", "hardcore", "bdsm", "pain", "force", "rape",
-        "creampie", "cumshot", "facial", "dp", "gangbang", "bbc",
-        "old", "ugly", "fat", "skinny", "tattoo", "piercing",
-        "squirting", "piss", "scat", "blood"
+    // Block explicit age-related search terms in an adult-content context.
+    private val disallowedQueryPattern = Regex(
+        """(?<![\p{L}\p{N}])(?:underage|minor(?:s)?|child(?:ren)?|kid(?:s)?|teen(?:s|age|ager|agers)?|young|schoolgirl|schoolboy|loli(?:ta)?|jailbait|minderårig(?:a|t)?|tonår(?:ing|ingar|ingarna)?|ungdom(?:ar|arna)?|barn(?:et|en)?|barely\s+legal)(?![\p{L}\p{N}])""",
+        RegexOption.IGNORE_CASE
     )
 
+    fun containsBlockedAgeTerm(text: String): Boolean = disallowedQueryPattern.containsMatchIn(text)
+
     fun expand(rawInput: String): ExpandedQuery {
-        val input = rawInput.trim().lowercase()
+        val input = rawInput.trim().lowercase(Locale.ROOT)
         if (input.isBlank()) {
             return ExpandedQuery("", emptyList(), explanation = "Tom sökfras")
+        }
+
+        if (disallowedQueryPattern.containsMatchIn(input)) {
+            val reason = "Sökningen stoppades eftersom den innehåller termer som kan avse minderåriga."
+            return ExpandedQuery(
+                searchTerms = "",
+                negativeKeywords = emptyList(),
+                explanation = reason,
+                blockedReason = reason
+            )
         }
 
         val negatives = mutableSetOf<String>()
@@ -82,32 +83,17 @@ class QueryExpander {
 
         // 2. Dela upp resten i ord
         val tokens = cleaned
-            .split(Regex("[\\s,;.!?]+") )
+            .split(Regex("[\\s,;.!?]+"))
             .map { it.trim() }
             .filter { it.length > 1 }
 
         for (token in tokens) {
-            when {
-                // Redan identifierad som negativ
-                negatives.contains(token) -> {}
-                // Vanliga negativa ord som står ensamma kan också filtreras om användaren
-                // skrivit dem i negativ kontext – här behandlar vi dem neutralt
-                else -> {
-                    // Expandera med synonymer om det finns
-                    val expanded = expansions[token]
-                    if (expanded != null) {
-                        positives.addAll(expanded)
-                    } else {
-                        positives.add(token)
-                    }
-                }
-            }
+            if (token in negatives) continue
+            val expanded = expansions[token]
+            if (expanded != null) positives.addAll(expanded) else positives.add(token)
         }
 
-        // 3. Extra: om användaren skrev ett vanligt negativt ord tillsammans med "no"/"utan"
-        // har vi redan fångat det. Annars lämnar vi det.
-
-        // 4. Bygg söksträng (unika termer, max rimlig längd)
+        // 3. Bygg söksträng (unika termer, max rimlig längd)
         val searchTerms = positives
             .distinct()
             .take(8)
@@ -123,7 +109,7 @@ class QueryExpander {
         }
 
         return ExpandedQuery(
-            searchTerms = searchTerms.ifBlank { rawInput },
+            searchTerms = searchTerms,
             negativeKeywords = negatives.toList(),
             explanation = explanation
         )

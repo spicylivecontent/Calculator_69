@@ -1,12 +1,14 @@
 package com.calculator.app.ui.vault
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -22,11 +24,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.calculator.app.data.entity.DislikeRuleEntity
+import com.calculator.app.data.entity.SearchPresetEntity
 import com.calculator.app.data.entity.VideoEntity
 import com.calculator.app.data.model.SearchResult
 import com.calculator.app.ui.library.LibraryViewModel
@@ -35,19 +40,53 @@ import com.calculator.app.ui.player.TestPlayerButton
 import com.calculator.app.ui.player.VideoPlayerScreen
 import com.calculator.app.ui.search.SearchViewModel
 import com.calculator.app.ui.search.SearchViewModelFactory
+import java.util.Locale
 
 enum class VaultTab { HOME, SEARCH, LIBRARY, SETTINGS }
-enum class LibrarySection { OVERVIEW, FAVORITES, WATCH_LATER, DISLIKES }
+enum class LibrarySection { OVERVIEW, FAVORITES, WATCH_LATER, DISLIKES, SEARCH_PRESETS }
+
+private const val AGE_CONFIRMATION_PREFERENCES = "calculator_content_access"
+private const val AGE_CONFIRMATION_KEY = "adult_content_confirmed"
 
 @Composable
 fun VaultScreen(
     isDecoy: Boolean = false,
-    onLock: () -> Unit
+    onLock: () -> Unit,
+    onChangeRealPin: (String) -> Boolean = { false },
+    onChangeDecoyPin: (String) -> Boolean = { false }
 ) {
     var currentTab by remember { mutableStateOf(VaultTab.HOME) }
     var showTestPlayer by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val agePreferences = context.getSharedPreferences(AGE_CONFIRMATION_PREFERENCES, Context.MODE_PRIVATE)
+    var adultContentConfirmed by remember(isDecoy) {
+        mutableStateOf(isDecoy || agePreferences.getBoolean(AGE_CONFIRMATION_KEY, false))
+    }
+
+    if (!isDecoy && !adultContentConfirmed) {
+        AdultContentConfirmation(
+            onConfirm = {
+                agePreferences.edit().putBoolean(AGE_CONFIRMATION_KEY, true).apply()
+                adultContentConfirmed = true
+            },
+            onExit = onLock
+        )
+        return
+    }
+
+    // Do not create the search/database view models while showing the decoy screen.
+    if (isDecoy) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Brush.verticalGradient(listOf(Color(0xFF2C2C2C), Color(0xFF1E1E1E))))
+        ) {
+            DecoyContent(onLock = onLock)
+        }
+        return
+    }
+
     val searchViewModel: SearchViewModel = viewModel(
         factory = SearchViewModelFactory(context.applicationContext as Application)
     )
@@ -71,22 +110,18 @@ fun VaultScreen(
         return
     }
 
-    val backgroundBrush = if (isDecoy) {
-        Brush.verticalGradient(listOf(Color(0xFF2C2C2C), Color(0xFF1E1E1E)))
-    } else {
-        Brush.verticalGradient(listOf(Color(0xFF0D0D1A), Color(0xFF12122B), Color(0xFF1A1A3A)))
-    }
+    val backgroundBrush = Brush.verticalGradient(
+        listOf(Color(0xFF0D0D1A), Color(0xFF12122B), Color(0xFF1A1A3A))
+    )
 
     Scaffold(
         containerColor = Color.Transparent,
         bottomBar = {
-            if (!isDecoy) {
-                NavigationBar(containerColor = Color(0xFF1A1A2E), contentColor = Color.White) {
-                    VaultNavItem(Icons.Default.Home, "Home", currentTab == VaultTab.HOME) { currentTab = VaultTab.HOME }
-                    VaultNavItem(Icons.Default.Search, "Search", currentTab == VaultTab.SEARCH) { currentTab = VaultTab.SEARCH }
-                    VaultNavItem(Icons.Default.VideoLibrary, "Library", currentTab == VaultTab.LIBRARY) { currentTab = VaultTab.LIBRARY }
-                    VaultNavItem(Icons.Default.Settings, "Settings", currentTab == VaultTab.SETTINGS) { currentTab = VaultTab.SETTINGS }
-                }
+            NavigationBar(containerColor = Color(0xFF1A1A2E), contentColor = Color.White) {
+                VaultNavItem(Icons.Default.Home, "Home", currentTab == VaultTab.HOME) { currentTab = VaultTab.HOME }
+                VaultNavItem(Icons.Default.Search, "Search", currentTab == VaultTab.SEARCH) { currentTab = VaultTab.SEARCH }
+                VaultNavItem(Icons.Default.VideoLibrary, "Library", currentTab == VaultTab.LIBRARY) { currentTab = VaultTab.LIBRARY }
+                VaultNavItem(Icons.Default.Settings, "Settings", currentTab == VaultTab.SETTINGS) { currentTab = VaultTab.SETTINGS }
             }
         }
     ) { innerPadding ->
@@ -96,26 +131,48 @@ fun VaultScreen(
                 .background(backgroundBrush)
                 .padding(innerPadding)
         ) {
-            if (isDecoy) {
-                DecoyContent(onLock = onLock)
-            } else {
-                when (currentTab) {
-                    VaultTab.HOME -> HomeTab(
-                        onLock = onLock,
-                        onPlayTest = { showTestPlayer = true },
-                        feed = searchViewModel.lastFeed,
-                        isResolving = searchViewModel.isResolvingStream,
-                        onPlay = { searchViewModel.playVideo(it) },
-                        onFavorite = { searchViewModel.addFavorite(it) },
-                        onWatchLater = { searchViewModel.addWatchLater(it) }
-                    )
-                    VaultTab.SEARCH -> SearchTab(viewModel = searchViewModel)
-                    VaultTab.LIBRARY -> LibraryTab()
-                    VaultTab.SETTINGS -> SettingsTab(onLock = onLock)
-                }
+            when (currentTab) {
+                VaultTab.HOME -> HomeTab(
+                    onLock = onLock,
+                    onPlayTest = { showTestPlayer = true },
+                    feed = searchViewModel.lastFeed,
+                    isResolving = searchViewModel.isResolvingStream,
+                    onPlay = { searchViewModel.playVideo(it) },
+                    onFavorite = { searchViewModel.addFavorite(it) },
+                    onWatchLater = { searchViewModel.addWatchLater(it) }
+                )
+                VaultTab.SEARCH -> SearchTab(viewModel = searchViewModel)
+                VaultTab.LIBRARY -> LibraryTab(
+                    onUsePreset = { preset ->
+                        searchViewModel.useSearchPreset(preset)
+                        currentTab = VaultTab.SEARCH
+                    }
+                )
+                VaultTab.SETTINGS -> SettingsTab(
+                    onLock = onLock,
+                    onChangeRealPin = onChangeRealPin,
+                    onChangeDecoyPin = onChangeDecoyPin
+                )
             }
         }
     }
+}
+
+@Composable
+private fun AdultContentConfirmation(onConfirm: () -> Unit, onExit: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onExit,
+        title = { Text("Åldersbekräftelse") },
+        text = {
+            Text("Den här delen kan innehålla vuxet material. Fortsätt endast om du är minst 18 år eller myndig enligt lokal lag.")
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("Jag är 18+ – fortsätt") }
+        },
+        dismissButton = {
+            TextButton(onClick = onExit) { Text("Tillbaka") }
+        }
+    )
 }
 
 @Composable
@@ -256,6 +313,10 @@ private fun FeedCard(
 
 @Composable
 private fun SearchTab(viewModel: SearchViewModel) {
+    var showSavePresetDialog by remember { mutableStateOf(false) }
+    var presetName by remember { mutableStateOf("") }
+    var presetDialogError by remember { mutableStateOf<String?>(null) }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Search", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(12.dp))
@@ -309,6 +370,55 @@ private fun SearchTab(viewModel: SearchViewModel) {
             shape = RoundedCornerShape(12.dp),
             singleLine = true
         )
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(
+                onClick = {
+                    presetName = viewModel.query.trim().take(60)
+                    presetDialogError = null
+                    showSavePresetDialog = true
+                },
+                enabled = viewModel.query.isNotBlank()
+            ) {
+                Text("Spara sökning", color = Color(0xFF80CBC4))
+            }
+        }
+
+        if (showSavePresetDialog) {
+            AlertDialog(
+                onDismissRequest = { showSavePresetDialog = false },
+                title = { Text("Spara sökning") },
+                text = {
+                    Column {
+                        OutlinedTextField(
+                            value = presetName,
+                            onValueChange = { presetName = it.take(60) },
+                            label = { Text("Namn") },
+                            singleLine = true
+                        )
+                        presetDialogError?.let {
+                            Spacer(Modifier.height(8.dp))
+                            Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        when {
+                            presetName.isBlank() -> presetDialogError = "Ange ett namn."
+                            viewModel.saveSearchPreset(presetName) -> {
+                                showSavePresetDialog = false
+                                presetName = ""
+                            }
+                            else -> presetDialogError = viewModel.errorMessage ?: "Sökningen kunde inte sparas."
+                        }
+                    }) { Text("Spara") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSavePresetDialog = false }) { Text("Avbryt") }
+                }
+            )
+        }
 
         viewModel.aiExplanation?.let {
             Spacer(modifier = Modifier.height(8.dp))
@@ -400,7 +510,7 @@ private fun SearchResultCard(
                 IconButton(
                     onClick = {
                         val word = result.title.split(" ")
-                            .map { it.trim().lowercase() }
+                            .map { it.trim().lowercase(Locale.ROOT) }
                             .firstOrNull { it.length > 3 } ?: result.title.take(12)
                         onNeverShow(word)
                     },
@@ -414,7 +524,7 @@ private fun SearchResultCard(
 }
 
 @Composable
-private fun LibraryTab() {
+private fun LibraryTab(onUsePreset: (SearchPresetEntity) -> Unit) {
     val context = LocalContext.current
     val viewModel: LibraryViewModel = viewModel(
         factory = LibraryViewModelFactory(context.applicationContext as Application)
@@ -425,9 +535,11 @@ private fun LibraryTab() {
     val favCount by viewModel.favoriteCount.collectAsState()
     val laterCount by viewModel.watchLaterCount.collectAsState()
     val dislikeCount by viewModel.dislikeCount.collectAsState()
+    val presetCount by viewModel.presetCount.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val watchLater by viewModel.watchLater.collectAsState()
     val rules by viewModel.dislikeRules.collectAsState()
+    val presets by viewModel.presets.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Library", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
@@ -440,6 +552,8 @@ private fun LibraryTab() {
                 LibraryOverviewItem("Watch Later", "$laterCount videor", Color(0xFF64B5F6)) { section = LibrarySection.WATCH_LATER }
                 Spacer(modifier = Modifier.height(10.dp))
                 LibraryOverviewItem("Never Show Again", "$dislikeCount regler", Color(0xFFFF5252)) { section = LibrarySection.DISLIKES }
+                Spacer(modifier = Modifier.height(10.dp))
+                LibraryOverviewItem("Sparade sökningar", "$presetCount sökningar", Color(0xFF80CBC4)) { section = LibrarySection.SEARCH_PRESETS }
             }
             LibrarySection.FAVORITES -> {
                 TextButton(onClick = { section = LibrarySection.OVERVIEW }) { Text("← Tillbaka", color = Color(0xFF90A4AE)) }
@@ -463,6 +577,20 @@ private fun LibraryTab() {
                 if (rules.isEmpty()) Text("Inga regler ännu", color = Color(0xFF90A4AE))
                 else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(rules) { rule -> DislikeRuleCard(rule) { viewModel.removeDislikeRule(rule) } }
+                }
+            }
+            LibrarySection.SEARCH_PRESETS -> {
+                TextButton(onClick = { section = LibrarySection.OVERVIEW }) { Text("← Tillbaka", color = Color(0xFF90A4AE)) }
+                Spacer(modifier = Modifier.height(8.dp))
+                if (presets.isEmpty()) Text("Inga sparade sökningar ännu", color = Color(0xFF90A4AE))
+                else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(presets) { preset ->
+                        SearchPresetCard(
+                            preset = preset,
+                            onUse = { onUsePreset(preset) },
+                            onRemove = { viewModel.removeSearchPreset(preset) }
+                        )
+                    }
                 }
             }
         }
@@ -515,6 +643,42 @@ private fun VideoEntityCard(video: VideoEntity, onRemove: () -> Unit) {
 }
 
 @Composable
+private fun SearchPresetCard(
+    preset: SearchPresetEntity,
+    onUse: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(preset.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text(preset.query, color = Color(0xFFB0BEC5), fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (preset.negativeKeywords.isNotBlank()) {
+                    Text(
+                        "Exkludera: ${preset.negativeKeywords}",
+                        color = Color(0xFFFF8A80),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                TextButton(onClick = onUse) { Text("Använd sökning", color = Color(0xFF80CBC4)) }
+            }
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Delete, "Ta bort", tint = Color(0xFFFF5252))
+            }
+        }
+    }
+}
+
+@Composable
 private fun DislikeRuleCard(rule: DislikeRuleEntity, onRemove: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -538,15 +702,24 @@ private fun DislikeRuleCard(rule: DislikeRuleEntity, onRemove: () -> Unit) {
 }
 
 @Composable
-private fun SettingsTab(onLock: () -> Unit) {
+private fun SettingsTab(
+    onLock: () -> Unit,
+    onChangeRealPin: (String) -> Boolean,
+    onChangeDecoyPin: (String) -> Boolean
+) {
+    var pinToChange by remember { mutableStateOf<String?>(null) }
+
     Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
         Text("Settings", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(24.dp))
-        SettingsItem("Byt PIN-kod", "Ändra den hemliga koden")
+        SettingsItem("Byt huvudkod", "Ändra koden som öppnar vaulten") { pinToChange = "real" }
         Spacer(modifier = Modifier.height(12.dp))
-        SettingsItem("Decoy-PIN", "Ändra den falska koden")
+        SettingsItem("Byt reservkod", "Ändra koden som öppnar decoy-vyn") { pinToChange = "decoy" }
         Spacer(modifier = Modifier.height(12.dp))
-        SettingsItem("Biometri", "Kräv fingeravtryck/ansikte")
+        SettingsItem(
+            "Biometrisk låsning",
+            "Krävs för att öppna vaulten. Om biometri saknas förblir vaulten låst."
+        )
         Spacer(modifier = Modifier.height(32.dp))
         Button(
             onClick = onLock,
@@ -559,12 +732,27 @@ private fun SettingsTab(onLock: () -> Unit) {
             Text("Lås vaulten (Panic)", fontSize = 16.sp, fontWeight = FontWeight.Medium)
         }
     }
+
+    pinToChange?.let { pinType ->
+        PinChangeDialog(
+            title = if (pinType == "real") "Byt huvudkod" else "Byt reservkod",
+            onDismiss = { pinToChange = null },
+            onSave = { pin ->
+                val saved = if (pinType == "real") onChangeRealPin(pin) else onChangeDecoyPin(pin)
+                if (saved) pinToChange = null
+                saved
+            }
+        )
+    }
 }
 
 @Composable
-private fun SettingsItem(title: String, subtitle: String) {
+private fun SettingsItem(title: String, subtitle: String, onClick: (() -> Unit)? = null) {
+    val itemModifier = Modifier.fillMaxWidth().then(
+        if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
+    )
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = itemModifier,
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E3A)),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -573,6 +761,67 @@ private fun SettingsItem(title: String, subtitle: String) {
             Text(subtitle, color = Color(0xFF90A4AE), fontSize = 13.sp)
         }
     }
+}
+
+@Composable
+private fun PinChangeDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Boolean
+) {
+    var pin by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { value ->
+                        if (value.length <= 12 && value.all { it.isDigit() }) pin = value
+                    },
+                    label = { Text("Ny kod (4–12 siffror)") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.NumberPassword
+                    )
+                )
+                OutlinedTextField(
+                    value = confirmation,
+                    onValueChange = { value ->
+                        if (value.length <= 12 && value.all { it.isDigit() }) confirmation = value
+                    },
+                    label = { Text("Bekräfta ny kod") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.NumberPassword
+                    )
+                )
+                errorMessage?.let {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    errorMessage = when {
+                        pin.length !in 4..12 -> "Koden måste vara 4–12 siffror."
+                        pin != confirmation -> "Koderna stämmer inte."
+                        !onSave(pin) -> "Koden måste skilja sig från den andra koden."
+                        else -> null
+                    }
+                }
+            ) { Text("Spara") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Avbryt") } }
+    )
 }
 
 @Composable

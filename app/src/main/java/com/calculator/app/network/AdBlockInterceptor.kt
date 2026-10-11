@@ -3,6 +3,7 @@ package com.calculator.app.network
 import okhttp3.Interceptor
 import okhttp3.Response
 import java.io.IOException
+import java.util.Locale
 
 /**
  * Blockerar kända reklam- och trackingdomäner.
@@ -80,7 +81,7 @@ class AdBlockInterceptor : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val host = request.url.host.lowercase()
+        val host = request.url.host.lowercase(Locale.ROOT)
 
         // Blockera om hosten innehåller någon blockerad domän
         if (blockedHosts.any { blocked -> host == blocked || host.endsWith(".$blocked") }) {

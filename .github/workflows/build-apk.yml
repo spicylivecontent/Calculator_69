@@ -2,7 +2,6 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -12,34 +11,51 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           java-version: "17"
           distribution: "temurin"
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK 35
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Create Gradle Wrapper
-        run: |
-          gradle wrapper --gradle-version 8.9
-          chmod +x ./gradlew
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        id: build_apk
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleDebug --stacktrace --console=plain 2>&1 | tee gradle-build.log
+
+      - name: Report Gradle failure details
+        if: failure() && steps.build_apk.outcome == 'failure'
+        run: |
+          {
+            echo "## Gradle build failure details"
+            echo
+            echo '```text'
+            grep -E '(^e: | error: |FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find)' gradle-build.log | tail -n 50 || tail -n 80 gradle-build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -E '(^e: | error: |FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find)' gradle-build.log | tail -n 50 | while IFS= read -r line; do
+            line=${line//'%'/'%25'}
+            line=${line//$'\r'/'%0D'}
+            echo "::error title=Gradle diagnostic::$line"
+          done
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Calculator-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
           retention-days: 14
-
-      - name: Show APK info
-        run: ls -lh app/build/outputs/apk/debug/ || true

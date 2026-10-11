@@ -2,6 +2,7 @@ package com.calculator.app.data.extractor
 
 import com.calculator.app.data.model.SearchResult
 import com.calculator.app.network.NetworkClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -22,6 +23,8 @@ class XnxxExtractor : SiteExtractor {
                 val html = response.body?.string() ?: return@withContext emptyList()
                 parse(html)
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             emptyList()
         }
