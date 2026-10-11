@@ -411,6 +411,16 @@ fun SearchScreen(
                                 )
                             }
                         }
+                        val failed = viewModel.siteReports.filterNot { it.ok }.map { it.label }
+                        if (failed.isNotEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = "Fel hos: " + failed.joinToString(", ") +
+                                    " – tryck på en sajt för att utesluta den och sök igen.",
+                                color = VaultAmber,
+                                fontSize = 11.sp
+                            )
+                        }
                     }
                 }
             }
