@@ -8,6 +8,10 @@ import net.objecthunter.exp4j.ExpressionBuilder
 
 class CalculatorViewModel : ViewModel() {
 
+    // === PIN-inställning (kan ändras senare i Settings) ===
+    // Standard-PIN: 6969
+    private var secretPin: String = "6969"
+
     var input by mutableStateOf("")
         private set
 
@@ -15,6 +19,10 @@ class CalculatorViewModel : ViewModel() {
         private set
 
     var history by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    // true när rätt PIN har angetts
+    var isVaultUnlocked by mutableStateOf(false)
         private set
 
     fun onAction(action: CalculatorAction) {
@@ -63,6 +71,17 @@ class CalculatorViewModel : ViewModel() {
     private fun performCalculation() {
         if (input.isBlank()) return
 
+        // === HEMLIG PIN-KOLL ===
+        // Om användaren bara skrivit PIN-koden (inga operatorer) och trycker =
+        if (input == secretPin) {
+            // Rensa allt och lås upp vaulten
+            input = ""
+            result = ""
+            isVaultUnlocked = true
+            return
+        }
+
+        // Vanlig beräkning
         try {
             val expression = ExpressionBuilder(input).build()
             val res = expression.evaluate()
@@ -70,21 +89,32 @@ class CalculatorViewModel : ViewModel() {
             val finalResult = if (res == res.toLong().toDouble()) {
                 res.toLong().toString()
             } else {
-                // Begränsa decimaler
                 String.format("%.8f", res).trimEnd('0').trimEnd('.')
             }
 
             result = finalResult
 
-            // Lägg till i historik
             val entry = "$input = $finalResult"
             history = (history + entry).takeLast(15)
 
-            // Visa resultatet som ny input så man kan fortsätta räkna
             input = finalResult
 
         } catch (e: Exception) {
             result = "Error"
+        }
+    }
+
+    /** Anropas när man vill stänga vaulten och gå tillbaka till miniräknaren */
+    fun lockVault() {
+        isVaultUnlocked = false
+        input = ""
+        result = ""
+    }
+
+    /** Tillåter att ändra PIN senare (används i Settings) */
+    fun updatePin(newPin: String) {
+        if (newPin.length in 4..12 && newPin.all { it.isDigit() }) {
+            secretPin = newPin
         }
     }
 }

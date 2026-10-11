@@ -8,14 +8,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -28,17 +29,21 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 fun CalculatorScreen(
     viewModel: CalculatorViewModel = viewModel()
 ) {
+    // Om vault är upplåst → visa VaultPlaceholder (tills vidare)
+    if (viewModel.isVaultUnlocked) {
+        VaultPlaceholder(onLock = { viewModel.lockVault() })
+        return
+    }
+
     val historyListState = rememberLazyListState()
     val inputScrollState = rememberScrollState()
 
-    // Auto-scroll historik
     LaunchedEffect(viewModel.history.size) {
         if (viewModel.history.isNotEmpty()) {
             historyListState.animateScrollToItem(viewModel.history.size - 1)
         }
     }
 
-    // Auto-scroll input
     LaunchedEffect(viewModel.input) {
         inputScrollState.animateScrollTo(inputScrollState.maxValue)
     }
@@ -111,11 +116,7 @@ fun CalculatorScreen(
             modifier = Modifier.weight(1.6f),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Rad 1: C, DEL, %, /
-            Row(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 CalcButton("C", Modifier.weight(1f), Color(0xFF546E7A)) {
                     viewModel.onAction(CalculatorAction.Clear)
                 }
@@ -130,11 +131,7 @@ fun CalculatorScreen(
                 }
             }
 
-            // Rad 2: 7 8 9 *
-            Row(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 CalcButton("7", Modifier.weight(1f)) { viewModel.onAction(CalculatorAction.Number("7")) }
                 CalcButton("8", Modifier.weight(1f)) { viewModel.onAction(CalculatorAction.Number("8")) }
                 CalcButton("9", Modifier.weight(1f)) { viewModel.onAction(CalculatorAction.Number("9")) }
@@ -143,11 +140,7 @@ fun CalculatorScreen(
                 }
             }
 
-            // Rad 3: 4 5 6 -
-            Row(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 CalcButton("4", Modifier.weight(1f)) { viewModel.onAction(CalculatorAction.Number("4")) }
                 CalcButton("5", Modifier.weight(1f)) { viewModel.onAction(CalculatorAction.Number("5")) }
                 CalcButton("6", Modifier.weight(1f)) { viewModel.onAction(CalculatorAction.Number("6")) }
@@ -156,11 +149,7 @@ fun CalculatorScreen(
                 }
             }
 
-            // Rad 4: 1 2 3 +
-            Row(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 CalcButton("1", Modifier.weight(1f)) { viewModel.onAction(CalculatorAction.Number("1")) }
                 CalcButton("2", Modifier.weight(1f)) { viewModel.onAction(CalculatorAction.Number("2")) }
                 CalcButton("3", Modifier.weight(1f)) { viewModel.onAction(CalculatorAction.Number("3")) }
@@ -169,16 +158,77 @@ fun CalculatorScreen(
                 }
             }
 
-            // Rad 5: 0 . =
-            Row(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 CalcButton("0", Modifier.weight(2f)) { viewModel.onAction(CalculatorAction.Number("0")) }
                 CalcButton(".", Modifier.weight(1f)) { viewModel.onAction(CalculatorAction.Decimal) }
                 CalcButton("=", Modifier.weight(1f), Color(0xFFFF9800)) {
                     viewModel.onAction(CalculatorAction.Calculate)
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Enkel placeholder för Vault tills vi bygger riktiga vault-skärmar i senare steg.
+ * Visar att unlock fungerade och ger en knapp för att låsa igen.
+ */
+@Composable
+fun VaultPlaceholder(onLock: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460))
+                )
+            )
+            .windowInsetsPadding(WindowInsets.systemBars),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                tint = Color(0xFF00E676),
+                modifier = Modifier.size(72.dp)
+            )
+
+            Text(
+                text = "Vault Unlocked",
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = "Detta är en tillfällig placeholder.\nRiktiga vault-skärmar kommer i senare steg.",
+                color = Color(0xFFB0BEC5),
+                fontSize = 16.sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onLock,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF5252)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+            ) {
+                Text(
+                    text = "Lås igen (tillbaka till miniräknare)",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }
