@@ -12,11 +12,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.calculator.app.ui.vault.VaultScreen
 
 @Composable
 fun CalculatorScreen(
@@ -39,12 +37,12 @@ fun CalculatorScreen(
     val context = LocalContext.current
     val activity = context as? FragmentActivity
 
-    // Back-knappen fungerar som panic när vault är öppen
+    // Back-knappen = panic när vault är öppen
     BackHandler(enabled = viewModel.vaultMode != VaultMode.NONE) {
         viewModel.lockVault()
     }
 
-    // Hantera biometrisk prompt
+    // Biometrisk prompt
     LaunchedEffect(viewModel.shouldShowBiometric) {
         if (viewModel.shouldShowBiometric && activity != null) {
             showBiometricPrompt(
@@ -56,8 +54,8 @@ fun CalculatorScreen(
     }
 
     when (viewModel.vaultMode) {
-        VaultMode.REAL -> RealVaultPlaceholder(onLock = { viewModel.lockVault() })
-        VaultMode.DECOY -> DecoyVaultPlaceholder(onLock = { viewModel.lockVault() })
+        VaultMode.REAL -> VaultScreen(isDecoy = false, onLock = { viewModel.lockVault() })
+        VaultMode.DECOY -> VaultScreen(isDecoy = true, onLock = { viewModel.lockVault() })
         VaultMode.NONE -> CalculatorUI(viewModel = viewModel)
     }
 }
@@ -81,9 +79,7 @@ private fun showBiometricPrompt(
                 onFailedOrCancelled()
             }
 
-            override fun onAuthenticationFailed() {
-                // Låt användaren försöka igen
-            }
+            override fun onAuthenticationFailed() {}
         }
     )
 
@@ -193,76 +189,6 @@ private fun CalculatorUI(viewModel: CalculatorViewModel) {
                 CalcButton("0", Modifier.weight(2f)) { viewModel.onAction(CalculatorAction.Number("0")) }
                 CalcButton(".", Modifier.weight(1f)) { viewModel.onAction(CalculatorAction.Decimal) }
                 CalcButton("=", Modifier.weight(1f), Color(0xFFFF9800)) { viewModel.onAction(CalculatorAction.Calculate) }
-            }
-        }
-    }
-}
-
-@Composable
-fun RealVaultPlaceholder(onLock: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460))))
-            .windowInsetsPadding(WindowInsets.systemBars),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-            modifier = Modifier.padding(32.dp)
-        ) {
-            Icon(Icons.Default.Lock, null, tint = Color(0xFF00E676), modifier = Modifier.size(72.dp))
-            Text("Vault Unlocked", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-            Text(
-                "Riktiga vaulten (placeholder).\nTryck bakåt-knappen eller knappen nedan för att låsa.",
-                color = Color(0xFFB0BEC5),
-                fontSize = 16.sp,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = onLock,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().height(56.dp)
-            ) {
-                Text("Lås igen (Panic)", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            }
-        }
-    }
-}
-
-@Composable
-fun DecoyVaultPlaceholder(onLock: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF2C2C2C), Color(0xFF1E1E1E))))
-            .windowInsetsPadding(WindowInsets.systemBars),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-            modifier = Modifier.padding(32.dp)
-        ) {
-            Icon(Icons.Default.Warning, null, tint = Color(0xFFFFC107), modifier = Modifier.size(72.dp))
-            Text("Private Notes", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-            Text(
-                "Inga anteckningar ännu.\n(Detta är decoy-vaulten)",
-                color = Color(0xFFB0BEC5),
-                fontSize = 16.sp,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = onLock,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF546E7A)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().height(56.dp)
-            ) {
-                Text("Stäng", fontSize = 16.sp, fontWeight = FontWeight.Medium)
             }
         }
     }
