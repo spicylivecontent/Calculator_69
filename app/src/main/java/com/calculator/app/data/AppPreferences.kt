@@ -2,6 +2,7 @@ package com.calculator.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.calculator.app.security.SecureValue
 import com.calculator.app.ui.web.AdBlockLevel
 
 /** Standardkvalitet i spelaren. */
@@ -15,6 +16,27 @@ enum class PreferredQuality(val id: String, val label: String) {
 
     companion object {
         fun fromId(id: String?): PreferredQuality = entries.firstOrNull { it.id == id } ?: AUTO
+    }
+}
+
+/**
+ * När vaulten ska låsas av sig själv.
+ *
+ * Låsningen kräver alltid kod + biometri för att öppna igen – den stänger bara vyn.
+ */
+enum class AutoLock(
+    val id: String,
+    val label: String,
+    val shortLabel: String,
+    val timeoutMillis: Long
+) {
+    ON_BACKGROUND("background", "Direkt när appen lämnas", "Direkt", 0L),
+    AFTER_1_MIN("1min", "Efter 1 minut utan att skärmen rörs", "1 min", 60_000L),
+    AFTER_5_MIN("5min", "Efter 5 minuter utan att skärmen rörs", "5 min", 300_000L),
+    NEVER("never", "Aldrig – vaulten låses bara med panikknappen", "Aldrig", -1L);
+
+    companion object {
+        fun fromId(id: String?): AutoLock = entries.firstOrNull { it.id == id } ?: ON_BACKGROUND
     }
 }
 
@@ -50,6 +72,11 @@ class AppPreferences(context: Context) {
         get() = PreferredQuality.fromId(prefs.getString(KEY_QUALITY, PreferredQuality.AUTO.id))
         set(value) = prefs.edit().putString(KEY_QUALITY, value.id).apply()
 
+    /** När vaulten låser sig själv. */
+    var autoLock: AutoLock
+        get() = AutoLock.fromId(prefs.getString(KEY_AUTO_LOCK, AutoLock.ON_BACKGROUND.id))
+        set(value) = prefs.edit().putString(KEY_AUTO_LOCK, value.id).apply()
+
     /**
      * Hämtar uppdaterade skrapregler från appens eget repo (högst en gång i dygnet).
      * Endast data – adresser och mönster – aldrig kod.
@@ -63,8 +90,9 @@ class AppPreferences(context: Context) {
         get() = AdBlockLevel.fromId(prefs.getString(KEY_ADBLOCK, AdBlockLevel.STANDARD.id))
         set(value) = prefs.edit().putString(KEY_ADBLOCK, value.id).apply()
 
+    /** Sökhistoriken sparas krypterad (se [SecureValue]). */
     fun searchHistory(): List<String> =
-        prefs.getString(KEY_HISTORY, null)
+        SecureValue.read(prefs.getString(KEY_HISTORY, null))
             ?.split(SEPARATOR)
             ?.map { it.trim() }
             ?.filter { it.isNotBlank() }
@@ -75,7 +103,7 @@ class AppPreferences(context: Context) {
         if (cleaned.isBlank()) return
         val updated = (listOf(cleaned) + searchHistory().filterNot { it.equals(cleaned, ignoreCase = true) })
             .take(MAX_HISTORY)
-        prefs.edit().putString(KEY_HISTORY, updated.joinToString(SEPARATOR)).apply()
+        prefs.edit().putString(KEY_HISTORY, SecureValue.write(updated.joinToString(SEPARATOR))).apply()
     }
 
     fun clearSearchHistory() = prefs.edit().remove(KEY_HISTORY).apply()
@@ -90,6 +118,7 @@ class AppPreferences(context: Context) {
         const val KEY_QUALITY = "preferred_quality"
         const val KEY_ADBLOCK = "adblock_level"
         const val KEY_REMOTE_RULES = "remote_rules_enabled"
+        const val KEY_AUTO_LOCK = "auto_lock"
         const val KEY_HISTORY = "search_history"
         const val SEPARATOR = "\n"
         const val MAX_HISTORY = 12

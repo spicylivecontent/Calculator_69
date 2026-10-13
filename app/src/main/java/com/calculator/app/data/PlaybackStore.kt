@@ -2,6 +2,7 @@ package com.calculator.app.data
 
 import android.content.Context
 import com.calculator.app.data.model.SearchResult
+import com.calculator.app.security.SecureValue
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -42,54 +43,77 @@ data class RecentPlayback(
 /**
  * Sparar uppspelningspositioner och senaste spelade videor så att appen kan
  * erbjuda "Fortsätt titta" och starta om där användaren slutade.
+ *
+ * Titlar, adresser och positioner är känsliga, därför sparas de **krypterade**
+ * ([SecureValue]) och positionerna ligger i en enda krypterad karta i stället för i
+ * nycklar som `pos_<video-id>` – annars hade videons id läckt via nyckelnamnet.
  */
 class PlaybackStore(context: Context) {
 
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun position(videoId: String): Long =
-        prefs.getLong(positionKey(videoId), 0L)
+    fun position(videoId: String): Long = readPositions()[videoId]?.first ?: 0L
 
     fun saveProgress(videoId: String, positionMs: Long, durationMs: Long) {
-        prefs.edit()
-            .putLong(positionKey(videoId), positionMs.coerceAtLeast(0L))
-            .putLong(durationKey(videoId), durationMs.coerceAtLeast(0L))
-            .apply()
+        val positions = readPositions().toMutableMap()
+        positions[videoId] = positionMs.coerceAtLeast(0L) to durationMs.coerceAtLeast(0L)
+        writePositions(positions)
     }
 
-    fun savePlayed(result: SearchResult) {
-        readAll().let { list ->
-            val existing = list.firstOrNull { it.id == result.id }
-            val entry = RecentPlayback(
-                id = result.id,
-                title = result.title,
-                thumbnailUrl = result.thumbnailUrl,
-                sourceSite = result.sourceSite,
-                detailUrl = result.detailUrl,
-                streamUrl = result.streamUrl ?: existing?.streamUrl,
-                positionMs = existing?.positionMs ?: 0L,
-                durationMs = existing?.durationMs ?: 0L,
-                updatedAt = System.currentTimeMillis()
-            )
-            val updated = (listOf(entry) + list.filterNot { it.id == result.id }).take(MAX_ENTRIES)
-            writeAll(updated)
+    /** videoId -> (position, längd) */
+    private fun readPositions(): Map<String, Pair<Long, Long>> {
+        migrateLegacyPositions()
+        val raw = SecureValue.read(prefs.getString(KEY_POSITIONS, null)) ?: return emptyMap()
+        return try {
+            val json = JSONObject(raw)
+            buildMap {
+                for (id in json.keys()) {
+                    val entry = json.optJSONArray(id) ?: continue
+                    put(id, entry.optLong(0) to entry.optLong(1))
+                }
+            }
+        } catch (_: Exception) {
+            emptyMap()
         }
     }
 
-    fun recent(limit: Int = MAX_ENTRIES): List<RecentPlayback> = readAll().take(limit)
+    private fun writePositions(positions: Map<String, Pair<Long, Long>>) {
+        val json = JSONObject()
+        for ((id, value) in positions) {
+            json.put(id, JSONArray().put(value.first).put(value.second))
+        }
+        prefs.edit().putString(KEY_POSITIONS, SecureValue.write(json.toString())).apply()
+    }
 
-    /** Videor som användaren inte tittat klart på, senast först. */
-    fun continueWatching(limit: Int = 10): List<RecentPlayback> =
-        readAll()
-            .filter { it.positionMs > RESUME_THRESHOLD_MS }
-            .filter { it.durationMs <= 0L || it.positionMs < it.durationMs - RESUME_END_MARGIN_MS }
-            .take(limit)
+    /** Flyttar gamla `pos_<id>`/`dur_<id>`-nycklar till den krypterade kartan, en gång. */
+    private fun migrateLegacyPositions() {
+        if (prefs.contains(KEY_POSITIONS)) return
+        val ids = prefs.all.keys
+            .filter { it.startsWith(LEGACY_POSITION_PREFIX) }
+            .map { it.removePrefix(LEGACY_POSITION_PREFIX) }
+        if (ids.isEmpty()) return
 
-    fun clear() = prefs.edit().remove(KEY_ENTRIES).apply()
+        val migrated = buildMap {
+            for (id in ids) {
+                val position = prefs.getLong(LEGACY_POSITION_PREFIX + id, 0L)
+                val duration = prefs.getLong(LEGACY_DURATION_PREFIX + id, 0L)
+                if (position > 0L || duration > 0L) put(id, position to duration)
+            }
+        }
+
+        val editor = prefs.edit()
+        for (id in ids) {
+            editor.remove(LEGACY_POSITION_PREFIX + id)
+            editor.remove(LEGACY_DURATION_PREFIX + id)
+        }
+        editor.apply()
+
+        if (migrated.isNotEmpty()) writePositions(migrated)
+    }
 
     private fun readAll(): List<RecentPlayback> {
-        val raw = prefs.getString(KEY_ENTRIES, null) ?: return emptyList()
+        val raw = SecureValue.read(prefs.getString(KEY_ENTRIES, null)) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
             (0 until array.length()).mapNotNull { index ->
@@ -127,15 +151,15 @@ class PlaybackStore(context: Context) {
                     .put("at", entry.updatedAt)
             )
         }
-        prefs.edit().putString(KEY_ENTRIES, array.toString()).apply()
+        prefs.edit().putString(KEY_ENTRIES, SecureValue.write(array.toString())).apply()
     }
-
-    private fun positionKey(videoId: String) = "pos_$videoId"
-    private fun durationKey(videoId: String) = "dur_$videoId"
 
     private companion object {
         const val PREFS_NAME = "calculator_playback"
         const val KEY_ENTRIES = "recent_entries"
+        const val KEY_POSITIONS = "positions"
+        const val LEGACY_POSITION_PREFIX = "pos_"
+        const val LEGACY_DURATION_PREFIX = "dur_"
         const val MAX_ENTRIES = 40
         const val RESUME_THRESHOLD_MS = 15_000L
         const val RESUME_END_MARGIN_MS = 30_000L

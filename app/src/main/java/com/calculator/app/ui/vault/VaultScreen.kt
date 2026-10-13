@@ -33,15 +33,19 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -60,6 +64,8 @@ import com.calculator.app.ui.search.SearchScreen
 import com.calculator.app.ui.search.SearchViewModel
 import com.calculator.app.ui.search.SearchViewModelFactory
 import com.calculator.app.ui.settings.SettingsScreen
+import kotlinx.coroutines.delay
+import java.util.concurrent.atomic.AtomicLong
 import com.calculator.app.ui.theme.VaultAccent
 import com.calculator.app.ui.theme.VaultBackground
 import com.calculator.app.ui.theme.VaultError
@@ -141,6 +147,13 @@ private fun VaultContent(
         onLock()
     }
 
+    // Autolås efter inaktivitet. Spelarna ligger före den här punkten, så tiden räknas
+    // bara medan användaren faktiskt är i menyerna – en film som spelas låser inte appen.
+    val autoLockModifier = rememberAutoLockModifier(
+        timeoutMillis = searchViewModel.preferences.autoLock.timeoutMillis,
+        onTimeout = lockEverything
+    )
+
     val favorites by libraryViewModel.favorites.collectAsState()
     val watchLater by libraryViewModel.watchLater.collectAsState()
     val rules by libraryViewModel.dislikeRules.collectAsState()
@@ -213,6 +226,7 @@ private fun VaultContent(
     }
 
     Scaffold(
+        modifier = Modifier.fillMaxSize().then(autoLockModifier),
         containerColor = Color.Transparent,
         bottomBar = {
             NavigationBar(containerColor = VaultSurface, contentColor = VaultTextPrimary) {
@@ -438,3 +452,39 @@ private fun DecoyContent(onLock: () -> Unit) {
         }
     }
 }
+
+/**
+ * Modifierare som låser vaulten efter en stund utan att användaren rört skärmen.
+ *
+ * Tryck och svep observeras i den första passen och konsumeras aldrig, så att listor,
+ * spelare och knappar fungerar precis som förut. Tiden kontrolleras med jämna mellanrum
+ * i stället för att starta en timer per beröring.
+ */
+@Composable
+private fun rememberAutoLockModifier(timeoutMillis: Long, onTimeout: () -> Unit): Modifier {
+    if (timeoutMillis <= 0L) return Modifier
+
+    val lastInteraction = remember { AtomicLong(System.currentTimeMillis()) }
+    val currentTimeout by rememberUpdatedState(onTimeout)
+
+    LaunchedEffect(timeoutMillis) {
+        while (true) {
+            delay(AUTO_LOCK_CHECK_INTERVAL_MS)
+            if (System.currentTimeMillis() - lastInteraction.get() >= timeoutMillis) {
+                currentTimeout()
+                break
+            }
+        }
+    }
+
+    return Modifier.pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitPointerEvent(PointerEventPass.Initial)
+                lastInteraction.set(System.currentTimeMillis())
+            }
+        }
+    }
+}
+
+private const val AUTO_LOCK_CHECK_INTERVAL_MS = 5_000L

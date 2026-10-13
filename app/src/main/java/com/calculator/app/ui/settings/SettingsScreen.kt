@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.calculator.app.data.AppPreferences
+import com.calculator.app.data.AutoLock
 import com.calculator.app.data.PreferredQuality
 import com.calculator.app.ui.components.SectionHeader
 import com.calculator.app.ui.components.TagChip
@@ -72,6 +73,7 @@ fun SettingsScreen(
     var keepScreenOn by remember { mutableStateOf(preferences.keepScreenOn) }
     var gestureSeeking by remember { mutableStateOf(preferences.gestureSeeking) }
     var resumePlayback by remember { mutableStateOf(preferences.resumePlayback) }
+    var autoLock by remember { mutableStateOf(preferences.autoLock) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -281,6 +283,22 @@ fun SettingsScreen(
                 title = "Biometrisk låsning",
                 subtitle = "Krävs för att öppna vaulten. Saknas biometri förblir vaulten låst."
             )
+        }
+        item {
+            VaultSettingCard(title = "Autolås", subtitle = autoLock.label) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AutoLock.entries.forEach { option ->
+                        TagChip(
+                            text = option.shortLabel,
+                            selected = autoLock == option,
+                            onClick = {
+                                autoLock = option
+                                preferences.autoLock = option
+                            }
+                        )
+                    }
+                }
+            }
         }
 
         item {
