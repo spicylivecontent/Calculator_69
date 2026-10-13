@@ -87,7 +87,7 @@ jobs:
 
           {
             if [ -f ui-tests.log ]; then
-              grep -E 'FAILED|AssertionError|ComparisonFailure|Expected' ui-tests.log | head -n 10
+              grep -E '^e: |FAILED|AssertionError|ComparisonFailure|Expected' ui-tests.log | head -n 10
             else
               echo "Instrumenterade tester: ingen loggfil skapades (emulatorn eller skriptet föll tidigt)"
             fi

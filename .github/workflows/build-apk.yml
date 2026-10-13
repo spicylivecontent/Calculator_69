@@ -34,7 +34,9 @@ jobs:
         id: build_apk
         run: |
           set -o pipefail
-          ./gradlew --no-daemon testDebugUnitTest assembleDebug --stacktrace --console=plain 2>&1 | tee gradle-build.log
+          # assembleDebugAndroidTest kompilerar UI-testerna också, så att stavfel och
+          # API-fel där upptäcks direkt i det snabba jobbet (emulatorjobbet kör dem sedan).
+          ./gradlew --no-daemon testDebugUnitTest assembleDebug assembleDebugAndroidTest --stacktrace --console=plain 2>&1 | tee gradle-build.log
 
       - name: Report Gradle failure details
         if: failure() && steps.build_apk.outcome == 'failure'
