@@ -2,11 +2,13 @@ package com.calculator.app.data.extractor
 
 import com.calculator.app.data.model.DurationParser
 import com.calculator.app.data.model.VideoMetadata
+import com.calculator.app.network.NetworkClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import okhttp3.OkHttpClient
 import org.jsoup.nodes.Element
 import java.util.Locale
 
@@ -24,9 +26,13 @@ object MetadataExtractor {
     private const val MAX_KEYWORDS = 40
 
     /** Hämtar och tolkar detaljsidan. Null om sidan inte svarar alls. */
-    suspend fun fetch(detailUrl: String, siteName: String = ""): VideoMetadata? = withContext(Dispatchers.IO) {
+    suspend fun fetch(
+        detailUrl: String,
+        siteName: String = "",
+        client: OkHttpClient = NetworkClient.client
+    ): VideoMetadata? = withContext(Dispatchers.IO) {
         try {
-            val html = Fetch.pageBlocking(detailUrl) ?: return@withContext null
+            val html = Fetch.pageBlocking(detailUrl, client = client) ?: return@withContext null
             parse(html, detailUrl, siteName)
         } catch (cancelled: CancellationException) {
             throw cancelled

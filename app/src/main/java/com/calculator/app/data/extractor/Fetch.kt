@@ -5,6 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
@@ -16,10 +17,20 @@ object Fetch {
     const val PAGE_TIMEOUT_MS = 12_000L
     private const val MAX_BODY_CHARS = 6_000_000
 
-    suspend fun page(url: String, referer: String? = null, timeoutMs: Long = PAGE_TIMEOUT_MS): String? =
-        withContext(Dispatchers.IO) { pageBlocking(url, referer, timeoutMs) }
+    suspend fun page(
+        url: String,
+        referer: String? = null,
+        timeoutMs: Long = PAGE_TIMEOUT_MS,
+        client: OkHttpClient = NetworkClient.client
+    ): String? = withContext(Dispatchers.IO) { pageBlocking(url, referer, timeoutMs, client) }
 
-    fun pageBlocking(url: String, referer: String? = null, timeoutMs: Long = PAGE_TIMEOUT_MS): String? {
+    /** [client] är samma delade klient som standard; parametern finns för tester. */
+    fun pageBlocking(
+        url: String,
+        referer: String? = null,
+        timeoutMs: Long = PAGE_TIMEOUT_MS,
+        client: OkHttpClient = NetworkClient.client
+    ): String? {
         val parsed = url.toHttpUrlOrNull()?.takeIf { it.isHttps } ?: return null
         val builder = Request.Builder().url(parsed).get()
         val parsedReferer = referer?.toHttpUrlOrNull()
@@ -27,7 +38,7 @@ object Fetch {
             builder.header("Referer", parsedReferer.toString())
             builder.header("Origin", "${parsedReferer.scheme}://${parsedReferer.host}")
         }
-        val call = NetworkClient.client.newCall(builder.build())
+        val call = client.newCall(builder.build())
         call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
         return try {
             call.execute().use { response ->
