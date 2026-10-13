@@ -80,6 +80,21 @@ jobs:
             echo "::error title=Gradle diagnostic::$line"
           done
 
+      - name: Visa lintfel som annotations
+        if: failure()
+        run: |
+          python3 - <<'PYLINT'
+          import os
+          import xml.etree.ElementTree as ET
+          path = "app/build/reports/lint-results-debug.xml"
+          if os.path.exists(path):
+              for issue in ET.parse(path).getroot().findall("issue"):
+                  if issue.get("severity") not in ("Error", "Fatal"):
+                      continue
+                  message = issue.get("message", "").replace("%", "%25").replace("\n", "%0A").replace("\r", "%0D")
+                  print("::error title=Android lint::" + issue.get("id", "") + ": " + message)
+          PYLINT
+
       - name: Kontrollera APK-storleken
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk

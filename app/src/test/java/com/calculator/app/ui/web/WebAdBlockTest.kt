@@ -119,8 +119,8 @@ class WebAdBlockTest {
 
     @Test
     fun mediaDetectionDoesNotTrustQueryParameters() {
-        assertFalse(WebAdBlock.isMedia("https://other.example/redirect?to=movie.mp4"))
-        assertEquals(NavigationDecision.EXTERNAL, WebAdBlock.navigationFor(site, "https://other.example/redirect?to=movie.mp4"))
+        assertFalse(WebAdBlock.isMedia("https://other.example/landing?to=movie.mp4"))
+        assertEquals(NavigationDecision.EXTERNAL, WebAdBlock.navigationFor(site, "https://other.example/landing?to=movie.mp4"))
     }
 
     @Test
