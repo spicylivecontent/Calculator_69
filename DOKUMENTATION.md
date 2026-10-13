@@ -73,8 +73,8 @@ stället – för situationer där någon annan tittar.
 | Övrigt | exp4j 0.4.8 (matte), androidx.biometric 1.1.0, coroutines 1.9.0 |
 | JVM-enhetstester | **170 testfall i 21 filer** (körs utan Android-enhet) |
 | Instrumenterade tester | **17 testfall i 5 filer** (emulator eller Android-enhet krävs) |
-| CI | GitHub Actions: `testDebugUnitTest assembleDebug` vid varje push |
-| APK (debug) | ca 21,7 MB, artifact **Calculator-debug-apk** |
+| CI | GitHub Actions: enhetstester, lint, APK och androidTest-kompilering vid push; emulatorregressioner på appkod |
+| APK (debug) | artifact **Calculator-debug-apk**; CI har ett tak på 40 MB |
 | Sajter | 10 stycken (se avsnitt 7) |
 | Kategorier / underkategorier | 12 / 106 |
 | Blockerade annonsdomäner | 148 unika (109 trackers + 51 popunder), 16 app-scheman, 44 annonsvägar |
@@ -977,8 +977,10 @@ appkod ändras. Vid byggfel skrivs Kotlin-fel och misslyckade tester dels som
 
 ## 18. Utvecklingshistorik
 
-Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) innehåller
-25 commits:
+Den ursprungliga featuregrenen `arena/a0d9d445-calculator-69` utgick från `main` @
+`03ccd07` och hade 34 commits. PR #4 (39 commits) förde in den och de efterföljande
+review-fixarna i `main`; PR #3 stängdes som ersatt. Tabellen är ett urval av viktiga
+milstolpar, inte en fullständig lista över varje commit.
 
 | Commit | Innehåll |
 |---|---|
@@ -1005,15 +1007,16 @@ Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) inneh�
 | `c677a06`, `6f39e04`, `7fe21b9` | Dokumentationen uppdaterad (kryptering, robusthet, fjärrregler, tester) |
 | `82dbbc1` | **Säkerhet**: krypterad sökhistorik och uppspelningshistorik (`CipherPayload`, `SecureValue`), autolås vid bakgrund och inaktivitet + `CipherPayloadTest` |
 | `612f66a` | **Stabilitet och UX**: omförsök med backoff i `Fetch`, batterisparläge, sajter som kan stängas av permanent, rättad "Fortsätt titta" (positionerna sammanfogas igen), Dependabot, APK-storlekskontroll, snapshot-test av rangordningen + `FetchRetryTest` |
+| `76b597e`, `9b68218` | Reviewfixar för vaultens livscykel, avbrytning av sökning, legacy-migrering, fail-closed-lagring, PIN-material och återupptagning |
+| `6de9a7a`, `b89b0e2`, `d36964d`, `6e89b77` | Lintfixar, WebView-navigeringsregressioner, spelargester/sökning/ljusstyrka och Media3 opt-in |
+| `650fc10` | Merge av PR #4 till `main` |
+| `fb47444`, `5a8c27b` | PR #5: källsajtbegränsade sökomdirigeringar, detaljlänkar, HTML5-helscreen-host, bounded resume-data och regressionsfixar |
 
-Senaste gröna CI-körning: **38441282284** (`9993853`, 145 testfall + APK, 24,7 MB). Två
-körningar före den var röda: `82dbbc1` föll på att `PlaybackStore` hade tappat fyra
-funktioner (`savePlayed`, `recent`, `continueWatching`, `clear`) som `SearchViewModel`
-anropar – de återställdes i `612f66a`, som också ser till att positionerna sammanfogas med
-historiken igen. Därefter föll ett enhetstest: `CipherPayloadTest` påstod att ett värde med
-IV men utan chiffertext gick att läsa tillbaka, samtidigt som trunkeringsprovet krävde
-motsatsen. Kontraktet är nu det strängare (en avbruten skrivning avvisas), och testet
-beskriver det (`9993853`).
+Senaste gröna snabba CI-körning: **38463103371** (JVM-tester, lint, APK och kompilering av
+instrumenterade tester). Emulatorn körde även de **17 instrumenterade regressionerna** i
+**38463103444**. Den första körningen på den här grenen (`38462442461`) fångade ett Kotlin-
+kompileringsfel i testets OkHttp DNS-resolver; det rättades i `5a8c27b` och båda workflows
+passerade därefter.
 
 ---
 
