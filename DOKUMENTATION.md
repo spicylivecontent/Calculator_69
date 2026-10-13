@@ -61,13 +61,13 @@ stället – för situationer där någon annan tittar.
 |---|---|
 | Paketnamn | `com.calculator.app` |
 | Språk | 100 % Kotlin (Compose-UI), svenska texter hårdkodade i koden |
-| Kotlin-kod | 10 489 rader i 71 filer (`app/src/main`) + 1 115 rader tester i 10 filer |
-| minSdk / targetSdk / compileSdk | 26 / 35 / 35 |
+| Kotlin-kod | 11 146 rader i 78 filer (`app/src/main`) + 1 521 rader tester i 14 filer |
+| minSdk / targetSdk / compileSdk | 26 / 35 / 36 |
 | versionCode / versionName | 1 / 1.0 |
 | Byggsystem | Gradle 8.9 (wrapper) + AGP 8.7.3 + Kotlin 2.0.21 + KSP 2.0.21-1.0.25 |
 | UI | Jetpack Compose (BOM 2024.10.01), Material 3, material-icons-extended |
 | Media | Media3/ExoPlayer 1.5.0 (`exoplayer`, `exoplayer-hls`, `ui`, `common`) |
-| Databas | Room 2.6.1 (`calculator_vault.db`, version 1, 6 tabeller) |
+| Databas | Room 2.6.1 + SQLCipher 4.19.1 (`calculator_vault_enc.db`, version 1, 6 tabeller) |
 | Nätverk | OkHttp 4.12.0 + Jsoup 1.18.1 |
 | Bilder | Coil 2.7.0 (crossfade) |
 | Övrigt | exp4j 0.4.8 (matte), androidx.biometric 1.1.0, coroutines 1.9.0 |
@@ -103,7 +103,7 @@ och kan startas manuellt från **Actions → Run workflow**. Stegen:
 
 1. Checkout
 2. JDK 17 (temurin)
-3. Android SDK + `platforms;android-35`, `build-tools;35.0.0`
+3. Android SDK + `platforms;android-36`, `build-tools;36.0.0`
 4. Gradle (basic cache)
 5. `./gradlew --no-daemon testDebugUnitTest assembleDebug --stacktrace --console=plain`
 6. Vid fel: skriver Kotlin-fel, testresultat och vanliga felrader till jobbets
@@ -775,7 +775,7 @@ Kör dem med `./gradlew testDebugUnitTest`.
 
 ### 15.2 CI
 
-Varje push kör workflowen: JDK 17 → Android SDK 35 → `testDebugUnitTest` +
+Varje push kör workflowen: JDK 17 → Android SDK 36 → `testDebugUnitTest` +
 `assembleDebug` → artifact. Vid fel skrivs Kotlin-fel och misslyckade tester dels som
 **annotations** på körningen, dels i jobbets **summary** (med testresultat-XML) – så att
 fel kan läsas utan att ladda ner loggen.
