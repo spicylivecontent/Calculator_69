@@ -1,0 +1,845 @@
+# Calculator – fullständig dokumentation
+
+Detta dokument beskriver **allt** i appen: vad den gör, hur den är byggd, varje viktig
+regel och konstant, hur man bygger den, vad som testas och vilka begränsningar som finns.
+
+> Känsligt innehåll: appen är en diskret miniräknare med en dold "vault" för vuxet
+> innehåll avsedd för personligt bruk. Läs avsnittet **Juridik och ansvar** sist i dokumentet.
+
+---
+
+## Innehåll
+
+1. [Vad appen är](#1-vad-appen-är)
+2. [Snabbfakta](#2-snabbfakta)
+3. [Bygga och installera](#3-bygga-och-installera)
+4. [Arkitektur och paketkarta](#4-arkitektur-och-paketkarta)
+5. [Flöden steg för steg](#5-flöden-steg-för-steg)
+6. [Kalkylatorn, låset och panikfunktionen](#6-kalkylatorn-låset-och-panikfunktionen)
+7. [Sökningen i detalj](#7-sökningen-i-detalj)
+8. [Inläsning av all information om filmen](#8-inläsning-av-all-information-om-filmen)
+9. [Relevans, taggar och avancerad sökning](#9-relevans-taggar-och-avancerad-sökning)
+10. [Uppspelning A: WebView-spelaren (standard)](#10-uppspelning-a-webview-spelaren-standard)
+11. [Uppspelning B: den inbyggda spelaren (beta)](#11-uppspelning-b-den-inbyggda-spelaren-beta)
+12. [Annonsblockering i detalj](#12-annonsblockering-i-detalj)
+13. [Lagring och datamodell](#13-lagring-och-datamodell)
+14. [Behörigheter, säkerhet och integritet](#14-behörigheter-säkerhet-och-integritet)
+15. [Kvalitetssäkring: tester och CI](#15-kvalitetssäkring-tester-och-ci)
+16. [Kända begränsningar](#16-kända-begränsningar)
+17. [Alla viktiga konstanter](#17-alla-viktiga-konstanter)
+18. [Utvecklingshistorik](#18-utvecklingshistorik)
+19. [Ordlista](#19-ordlista)
+20. [Juridik och ansvar](#20-juridik-och-ansvar)
+
+---
+
+## 1. Vad appen är
+
+En Android-app i två lager:
+
+1. **Kalkylatorn** – en fullt fungerande miniräknare (parenteser, procent, potens, minne)
+   som är allt en utomstående ser.
+2. **Vaulten** – en dold del som öppnas genom att skriva en hemlig **huvudkod** i
+   kalkylatorns display (t.ex. `1234` följt av `=`). Vaulten innehåller:
+   - en sökfunktion som skrapar resultatlistor från tio videotubesajter,
+   - en inläsning som hämtar **all information** om varje träff (taggar, kategorier,
+     medverkande, kvalitet, längd, datum, visningar och beskrivning),
+   - en resultatlista med små tumnaglar, rubriker, taggar och beskrivning,
+   - en **WebView-spelare** som spelar videon på sajten med appens egen
+     annonsblockering, popup-skydd och omdirigeringsskydd,
+   - bibliotek med favoriter, "titta senare", historik och sparade sökningar,
+   - inställningar för spelare, sökning, annonsblockering och säkerhet.
+
+Det finns också en **reservkod** (decoy) som öppnar en oskyldig tom anteckningsvy i
+stället – för situationer där någon annan tittar.
+
+---
+
+## 2. Snabbfakta
+
+| Egenskap | Värde |
+|---|---|
+| Paketnamn | `com.calculator.app` |
+| Språk | 100 % Kotlin (Compose-UI), svenska texter hårdkodade i koden |
+| Kotlin-kod | 10 489 rader i 71 filer (`app/src/main`) + 1 115 rader tester i 10 filer |
+| minSdk / targetSdk / compileSdk | 26 / 35 / 35 |
+| versionCode / versionName | 1 / 1.0 |
+| Byggsystem | Gradle 8.9 (wrapper) + AGP 8.7.3 + Kotlin 2.0.21 + KSP 2.0.21-1.0.25 |
+| UI | Jetpack Compose (BOM 2024.10.01), Material 3, material-icons-extended |
+| Media | Media3/ExoPlayer 1.5.0 (`exoplayer`, `exoplayer-hls`, `ui`, `common`) |
+| Databas | Room 2.6.1 (`calculator_vault.db`, version 1, 6 tabeller) |
+| Nätverk | OkHttp 4.12.0 + Jsoup 1.18.1 |
+| Bilder | Coil 2.7.0 (crossfade) |
+| Övrigt | exp4j 0.4.8 (matte), androidx.biometric 1.1.0, coroutines 1.9.0 |
+| Enhetstester | **87 testfall i 10 filer** (körs på JVM, ingen enhet krävs) |
+| CI | GitHub Actions: `testDebugUnitTest assembleDebug` vid varje push |
+| APK (debug) | ca 21,7 MB, artifact **Calculator-debug-apk** |
+| Sajter | 10 stycken (se avsnitt 7) |
+| Kategorier / underkategorier | 12 / 106 |
+| Blockerade annonsdomäner | 148 unika (109 trackers + 51 popunder), 16 app-scheman, 44 annonsvägar |
+
+---
+
+## 3. Bygga och installera
+
+### Lokalt
+
+Krav: JDK 17 och Android SDK Platform 35.
+
+```bash
+./gradlew assembleDebug            # bara APK
+./gradlew testDebugUnitTest        # bara testerna
+./gradlew test assembleDebug       # allt (det CI gör)
+```
+
+APK hamnar i `app/build/outputs/apk/debug/app-debug.apk`.
+
+Windows: `gradlew.bat assembleDebug`.
+
+### Via GitHub Actions
+
+Workflowen **Build APK** (`.github/workflows/build-apk.yml`) körs vid **varje push**
+och kan startas manuellt från **Actions → Run workflow**. Stegen:
+
+1. Checkout
+2. JDK 17 (temurin)
+3. Android SDK + `platforms;android-35`, `build-tools;35.0.0`
+4. Gradle (basic cache)
+5. `./gradlew --no-daemon testDebugUnitTest assembleDebug --stacktrace --console=plain`
+6. Vid fel: skriver Kotlin-fel, testresultat och vanliga felrader till jobbets
+   **summary** *och* som **annotations** på körningen (så att felet syns utan att ladda ner loggen)
+7. Laddar upp artifacten **Calculator-debug-apk** (14 dagars retention)
+
+En grön körning tar ca 4–5 minuter.
+
+### Installation på telefonen
+
+Ladda ner artifacten från en grön körning, packa upp `app-debug.apk` och installera
+(tillåt installation från okänd källa). Appen heter **Calculator** i launcher.
+
+---
+
+## 4. Arkitektur och paketkarta
+
+### Översikt
+
+```
+MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
+└── CalculatorTheme
+    └── CalculatorScreen
+        ├── PinSetupScreen            (första starten: huvudkod + reservkod)
+        ├── CalculatorUI              (VaultMode.NONE – räknaren)
+        └── VaultScreen               (VaultMode.REAL / DECOY)
+            ├── VaultTheme + VaultGradient
+            ├── åldersbekräftelse      (första gången i REAL)
+            ├── WebPlayerScreen        (webPlaying != null)   ← standard
+            ├── VideoPlayerScreen      (nowPlaying != null)   ← beta
+            └── Scaffold med fyra flikar
+                ├── HomeScreen      (Fortsätt titta, snabbsök, kategorier, senaste träffar)
+                ├── SearchScreen    (sök, kategorier, sajter, filter, taggmoln, resultat)
+                ├── LibraryScreen   (översikt, favoriter, watch later, historik, regler, presets)
+                └── SettingsScreen  (spelare, annonsblockering, sökning, sajter, säkerhet)
+```
+
+### Lager
+
+| Lager | Paket | Ansvar |
+|---|---|---|
+| UI | `ui/*` | Compose-skärmar och komponenter. Ingen nätverkskod. |
+| Tillstånd | `ui/search/SearchViewModel.kt`, `ui/library/LibraryViewModel.kt` | Sökning, inläsning, kö, uppspelning, bibliotek. |
+| Domänlogik (ren Kotlin) | `ai/`, `data/model/`, `data/taxonomy/`, `data/extractor/StreamSelection.kt`, `ui/web/WebAdBlock.kt` | Planering, relevans, tolkning, blockeringsregler – allt enhetstestbart. |
+| Nätverk | `network/`, `data/extractor/Fetch.kt` | OkHttp-klient, annonsblock, privacy-filter, hämtning. |
+| Data | `data/` | Room-databas, DAO:er, entities, SharedPreferences, uppspelningshistorik. |
+| Säkerhet | `security/PinStore.kt` | AES/GCM via Android Keystore. |
+
+### Filkarta
+
+**App och kalkylator**
+
+| Fil | Rader | Innehåll |
+|---|---|---|
+| `MainActivity.kt` | 55 | `FLAG_SECURE`, edge-to-edge, `CalculatorScreen`, taskbeskrivning ("Calculator") när vaulten är öppen |
+| `ui/calculator/CalculatorViewModel.kt` | 210 | Räknarlogik (exp4j), PIN-jämförelse, lås/upplås, biometri-flöde, `VaultMode` |
+| `ui/calculator/CalculatorScreen.kt` | 244 | Räknarens UI, PIN-inmatning via displayen, biometrisk prompt, `BackHandler` = paniklås |
+| `ui/calculator/CalculatorAction.kt` | 10 | Räknarens åtgärder |
+| `ui/calculator/PinSetupScreen.kt` | 115 | Första starten: skapa huvudkod + reservkod (4–12 siffror) |
+
+**Vaultens skal och tema**
+
+| Fil | Rader | Innehåll |
+|---|---|---|
+| `ui/vault/VaultScreen.kt` | 428 | Flikar, åldersbekräftelse, decoy, byte av koder, kopplar in spelarna |
+| `ui/theme/VaultTheme.kt` | 53 | Mörkt tema + palett (bakgrund, ytor, accent, gradienter) |
+| `ui/theme/Theme.kt`, `Type.kt`, `Color.kt` | 73 | Kalkylatorns eget Material 3-tema (dynamiska färger på Android 12+) |
+
+**Skärmar och komponenter**
+
+| Fil | Rader | Innehåll |
+|---|---|---|
+| `ui/home/HomeScreen.kt` | 249 | Startsida: progressrad, "Fortsätt titta", 8 snabbval, kategorikort, senaste träffar, låsknapp |
+| `ui/search/SearchScreen.kt` | 673 | Sökfält, filterrad, kategoripanel, avancerat sökfält, taggmoln, resultatlista, "ladda fler", spara sökning |
+| `ui/search/SearchViewModel.kt` | 899 | Hela sök- och uppspelningsflödet (se avsnitt 5) |
+| `ui/search/SearchViewModelFactory.kt` | 17 | Skapar ViewModel med Application |
+| `ui/library/LibraryScreen.kt` | 361 | Översikt + favoriter, watch later, historik, "never show again", sparade sökningar |
+| `ui/library/LibraryViewModel.kt` (+ Factory) | 75 | Flöden från Room + borttagningsmetoder |
+| `ui/settings/SettingsScreen.kt` | 335 | Standardkvalitet, spolintervall, skärm, gester, återupptagning, annonsblockering, "bara sidor som svarar", sökhistorik, säkerhet, paniklås |
+| `ui/components/VaultComponents.kt` | 506 | ShimmerBox, Thumbnail, Pill, PlayabilityPill, SectionHeader, VideoListCard, RecentVideoCard, EmptyState, VaultCard, TagChip, StatBadge |
+
+**WebView-spelaren (standard)**
+
+| Fil | Rader | Innehåll |
+|---|---|---|
+| `ui/web/WebPlayerScreen.kt` | 799 | WebView, annonsblock, popup-/omdirigeringsskydd, injektion, kontroller, kö, återupptagning |
+| `ui/web/WebAdBlock.kt` | 199 | Rena blockeringsregler (testade) + injicerad CSS/JS + nivåer |
+
+**Inbyggd spelare (beta)**
+
+| Fil | Rader | Innehåll |
+|---|---|---|
+| `ui/player/VideoPlayerScreen.kt` | 1 156 | ExoPlayer, kvalitetsmeny, gester, skrubbning, hastighet, felpanel |
+| `ui/player/PlayerQuality.kt` | 63 | Kvalitetsval, beskrivning, bitrate-tak |
+| `ui/player/PlayerSeekBar.kt` | 142 | Egen Canvas-tidslinje + tidsformatering |
+
+**Sökpipeline**
+
+| Fil | Rader | Innehåll |
+|---|---|---|
+| `ai/SearchPlanner.kt` | ~330 | Gör om fritext + kategorier till flera sökfrågor, negativa filter, synonymer |
+| `ai/AgeSafety.kt` | 45 | Blocklista för termer som kan avse minderåriga + svensk feltext |
+| `data/taxonomy/SearchTaxonomy.kt` | 259 | 12 kategorier, 106 underkategorier, uppslag |
+| `data/extractor/SiteExtractor.kt` | 41 | Interface + `BaseSiteExtractor` (sök-URL + strukturell parsning) |
+| `data/extractor/*Extractor.kt` (10 st) | 17–23 vardera | Sajtspecifik URL och listningskonfig |
+| `data/extractor/ExtractorSupport.kt` | 206 | Strukturell listningsparsning, titelstädning, tumnagel/längd/kvalitet |
+| `data/extractor/MultiSiteSearcher.kt` | 196 | Parallell sökning på alla sajter + inläsning av metadata i vågor |
+| `data/extractor/MetadataExtractor.kt` | 344 | Läser ut all information från en detaljsida |
+| `data/extractor/MiniJson.kt` | 199 | Liten JSON-tolkare för `application/ld+json` |
+| `data/extractor/Fetch.kt` | 48 | Gemensam HTTPS-hämtning (12 s, max 6 MB) |
+| `data/extractor/StreamSelection.kt` | 260 | Url-normalisering, medietyper, HLS-varianter, kvalitetsgissning, `looksRemoved` |
+| `data/extractor/StreamResolver.kt` | 232 | Extrahering av mediaström (används av beta-spelaren) |
+
+**Modeller och logik**
+
+| Fil | Rader | Innehåll |
+|---|---|---|
+| `data/model/SearchResult.kt` | 91 | Träff med `Playability`, taggar, beskrivning, kvalitet, längd, relevans |
+| `data/model/VideoMetadata.kt` | 68 | All skrapad information + `coverage`/`matchedTerms` |
+| `data/model/ResultRanker.kt` | 192 | Relevans, dubblettrensning, sortering, taggfilter, taggmoln, skrapad sökning |
+| `data/model/SearchQuery.kt` | 36 | `SearchQuery`, `SortOrder`, `LengthFilter` |
+| `data/model/DurationParser.kt` | 59 | "12:34", "1h 5min", "45 minuter" → sekunder |
+
+**Data och nätverk**
+
+| Fil | Rader | Innehåll |
+|---|---|---|
+| `data/AppPreferences.kt` | 88 | Alla inställningar (sparas i `calculator_app_prefs`) |
+| `data/PlaybackStore.kt` | ~150 | Uppspelningshistorik och positioner (`calculator_playback`) |
+| `data/AppDatabase.kt` | 44 | Room-databas, 6 tabeller, version 1 |
+| `data/Repository.kt` | 46 | Tunn wrapper över DAO:erna |
+| `data/dao/*.kt` (6 st) | 10–28 vardera | Video, favorit, watch later, dislike-regel, sökpreset, inställning |
+| `data/entity/*.kt` (6 st) | 10–19 vardera | Tabellmodeller |
+| `network/NetworkClient.kt` | 24 | Delad OkHttp-klient |
+| `network/AdBlockInterceptor.kt` | 26 | Kastar `IOException` för blockerade värdar |
+| `network/AdBlockHosts.kt` | 214 | Den delade domänlistan (148 domäner + 44 annonsvägar + 16 scheman) |
+| `network/PrivacyInterceptor.kt` | 62 | Tar bort trackingparametrar och identitetsheaders |
+
+---
+
+## 5. Flöden steg för steg
+
+### 5.1 Låsa upp vaulten
+
+1. Appen startar i `VaultMode.NONE` och visar räknaren.
+2. Användaren skriver sin huvudkod i displayen och trycker `=`.
+3. `CalculatorViewModel` jämför med den sparade huvudkoden. Vid träff sätts
+   `pendingVaultMode = REAL` och en **biometrisk prompt** visas.
+4. Vid lyckad biometri sätts `vaultMode = REAL` och `VaultScreen` visas. Vid
+   misslyckande/avbrott låses allt igen (`pendingVaultMode = NONE`).
+5. Skriver någon i stället **reservkoden** öppnas `VaultMode.DECOY` direkt (ingen biometri) –
+   en tom "Private Notes"-vy, som aldrig rör sökning, databas eller historik.
+6. **Panik:** `BackHandler` när vaulten är öppen låser den direkt, liksom knappen
+   "Lås vaulten (Panic)" i inställningarna och låsikonen på startsidan.
+
+### 5.2 Söka
+
+```
+Användaren trycker Sök (eller väljer snabbval/kategori/tagg)
+        │
+        ▼
+SearchPlanner.plan(rawInput, categoryTerms, extraNegatives)
+  ├─ AgeSafety: blockeras sökningen? → feltext, inga frågor
+  ├─ tomt utan kategorier? → "Skriv ett sökord eller välj en kategori."
+  ├─ citattecken → fraser, "no/utan/-ord" → negativa filter
+  ├─ svenska/engelska ord slås upp i synonymtabellen
+  └─ Plan(queries ≤ 5: huvudsökning + varianter, negatives, terms, explanation)
+        │
+        ▼
+MultiSiteSearcher.search(queries, siteIds, startPage=1, pageCount=1, maxPerSite=36)
+  ├─ en korutin per sajt (Dispatchers.IO), alla frågor × sidor
+  ├─ matchedTerms slås ihop per träff, först-vinner-dedupe på "{sajt}_{id}"
+  └─ onBatch → SearchViewModel.applyBatch (filtrerar bort blockerade ord,
+     märker träffen CHECKING och publicerar direkt)
+        │
+        ▼
+enrichPending: vågor om 10 träffar (max 6 vågor / 60 träffar per sökning)
+  ├─ MultiSiteSearcher.enrichMetadata (8 samtidiga) hämtar varje detaljsida
+  ├─ MetadataExtractor läser rubrik, taggar, kategorier, medverkande,
+  │  kvalitet, längd, datum, visningar och beskrivning
+  ├─ sidan borta/osvarande  → UNPLAYABLE (döljs)
+  └─ annars PLAYABLE med all metadata → applyEnriched → publishResults
+        │
+        ▼
+publishResults: relevans → filter (längd, "bara sidor som svarar") → taggmoln
+  → taggfilter → ev. avancerad sökning i skrapad text → sortering
+```
+
+"Ladda fler" upprepar samma sak med `startPage = nästa sida` och budget 30 träffar.
+Max 140 kandidater hålls i minnet per sökning.
+
+### 5.3 Spela upp
+
+1. Ett tryck på ett kort anropar `SearchViewModel.playVideo(result)` →
+   `openOnSite(...)`.
+2. Träffen byts mot den inlästa versionen, kön sätts till alla inlästa träffar i
+   aktuell ordning (så att nästa/föregående fungerar), videon sparas i
+   uppspelningshistoriken och `webPlaying` sätts.
+3. `WebPlayerScreen` tar över hela skärmen: WebView laddar `detailUrl`, injicerar
+   blockerings- och hjälpscript, och pollar filmens `<video>` varje sekund.
+4. Positionen sparas var 5:e sekund och vid stängning; nästa gång startar videon
+   ungefär där du slutade (skriptet `__pcResume` sätter `currentTime` när längden är känd).
+5. Stängning (`BackHandler` går först bakåt i webbläsarhistoriken, därefter stängs
+   spelaren) → `closeWebPlayer()` → tillbaka till listan.
+6. Väljer man **Direktuppspelning (beta)** i spelarens meny stängs WebView-vyn och
+   `VideoPlayerScreen` öppnas med en extraherad ström i stället.
+
+---
+
+## 6. Kalkylatorn, låset och panikfunktionen
+
+- **Räknaren** använder **exp4j** och hanterar tal, decimaltecken, operatorerna
+  `+ - * / %`, teckenradering, rensa och `=` (fel visas som `Fel`). Displayen är också
+  PIN-inmatningen, och huvud-/reservkoden skrivs in som ett vanligt tal före `=`.
+- **PIN-koder**: 4–12 siffror, huvudkod och reservkod måste skilja sig åt. De sparas
+  **krypterade** (AES/GCM/NoPadding, 256-bitars nyckel, 128-bitars GCM-tagg, slumpad IV
+  per kryptering) med en nyckel i **Android Keystore** (alias
+  `com.calculator.app.vault_pin_key`).
+- **Biometri**: `androidx.biometric`; huvudkoden kräver biometri. Saknas biometri på
+  enheten förblir vaulten låst (ingen bakväg).
+- **Screenshots**: `FLAG_SECURE` i `MainActivity` – skärmdumpar blockeras och
+  app-switchern visar en tom ruta. När vaulten är öppen sätts dessutom
+  taskbeskrivningen till "Calculator".
+- **Decoy**: egen reservkod → tom anteckningsvy. Decoy-läget instansierar aldrig
+  sök- eller biblioteks-ViewModel.
+- **Panik**: bakknappen, låsikonen i startsidan och knappen i inställningarna.
+- **Åldersbekräftelse**: en engångsdialog första gången vaulten öppnas i REAL
+  (sparas i `calculator_content_access` → `adult_content_confirmed`). Det är en
+  självbekräftelse, inte en riktig åldersverifiering.
+- **Byt koder**: från inställningarna, med bekräftelsefält och kontroll att koderna
+  skiljer sig och är 4–12 siffror.
+
+---
+
+## 7. Sökningen i detalj
+
+### 7.1 Taxonomin – 12 kategorier, 106 underkategorier
+
+Varje kategori har svensk etikett, emoji, kort beskrivning och underkategorier med
+**engelska söktermer** (det sajterna indexerar):
+
+| Kategori | Id | Exempel på underkategorier |
+|---|---|---|
+| 💇 Utseende | `appearance` | Blond, Brunett, Rödhårig, Långt hår, Tatueringar & piercing, Glamour & smink |
+| 💃 Kropp & figur | `body` | Kurvig, Slimmad, Atletisk, Petite, Yppig (BBW), Stor byst, Långa ben |
+| 🌍 Etnicitet & stil | `ethnicity` | Asiatisk, Latina, Ebony, Indisk, Arabisk, Europeisk, Skandinavisk |
+| 👥 Sällskap | `company` | Par, Trekant, Grupp, Lesbisk, Swinger, Orgie |
+| 🔥 Aktivitet | `activity` | Massage, Ridande, Deep throat, Masturbation, Squirt, Hardcore |
+| 📍 Plats | `location` | Sovrum, Kök, Badrum, Dusch, Bastu, Utomhus, Bil, Strand, Gym, Kontor, Hotell |
+| 💫 Stämning | `mood` | Romantisk, Sensuell, Passionerad, Lekfull, Dominant, Underdånig, Långsam, Intensiv, Rough |
+| 🎭 Rollspel | `roleplay` | Sjuksköterska, Polis, Chef, Sekreterare, Hemmafru, Brud, Underkläder, Strumpbyxor |
+| 🎥 Kamera & vinkel | `camera` | POV, Närbild, Amatör, Handhållen, Spegel, Casting |
+| 🎬 Produktion | `production` | 4K, HD, Långfilm, Retro, Vintage, Compilation |
+| ⛓️ Fetisch | `fetish` | Fötter, Leksaker, Binda, Latex, Olja |
+| 💦 Avslutning | `finish` | Cumshot, Creampie, Squirting, Flera avslut |
+
+Uppslag i `SearchTaxonomy`: `categories`, `allSubcategories`, `category(id)`,
+`subcategory(id)`, `subcategoriesFor(categoryId)`, `termsFor(ids)`, `labelsFor(ids)`,
+`categoryIdsFor(ids)`. Ett enhetstest kontrollerar att **ingen** term i trädet kan
+avse minderåriga.
+
+### 7.2 Från fritext till flera sökfrågor (`SearchPlanner`)
+
+- **Citat** `"på knäna"` hålls ihop som en fras (3–60 tecken).
+- **Negationer**: `utan X`, `inte X`, `ingen X`, `aldrig X`, `no X`, `without X`,
+  `-X` och fältet "Exkludera" → blir filter i stället för sökord.
+- **Synonymtabellen** översätter svenska och vanliga engelska ord:
+  *brunett*→`brunette`(+`brown hair`), *rött hår*→`redhead`(+`red hair`),
+  *kök*→`kitchen`, *utomhus*→`outdoor`, *massage*→`massage`, *pov*→`pov`(+`point of view`),
+  *milf*→`milf`(+`mature`), *amatör*→`amateur` … 112 nycklar i tabellen.
+  Nycklarna är normaliserade (gemener, accenter borttagna) så att *rött hår* och
+  *rott har* ger samma resultat.
+- **Stoppord** (and, the, med, och, eller …) filtreras bort, och `or`/`eller`
+  behandlas inte som ett eget sökord.
+- **Resultat**: en huvudsökning med alla positiva termer (max 6) plus varianter i
+  prioritetsordning (fraser → valda kategorier → enskilda ord ≥ 4 tecken →
+  synonymer), **max 5 frågor** totalt. `explanation` beskriver vad som söks och vad
+  som filtreras bort och visas under resultaten.
+- **Säkerhet**: `AgeSafety` blockerar hela sökningen om texten (eller en vald
+  kategori) innehåller termer som kan avse minderåriga – t.ex. *teen, young, youth,
+  schoolgirl, barely legal, minderårig, tonåring, barn* – och visar en svensk
+  förklaring. Reglerna matchar hela ord (så "kinder" och "youthful" går fria).
+
+### 7.3 De tio sajterna
+
+| Sajt | Sökväg | Sidnumrering |
+|---|---|---|
+| Eporner | `https://www.eporner.com/search/{q}/{page}/` | ja |
+| SpankBang | `https://spankbang.com/s/{q}/{page}/` | ja |
+| HQPorner | `https://hqporner.com/?q={q}` | nej (en sida) |
+| XVideos | `https://www.xvideos.com/?k={q}` | nej (en sida) |
+| XNXX | `https://www.xnxx.com/search/{q}/{page}` | ja |
+| xHamster | `https://xhamster.com/search/{q}?page={page}` | ja |
+| Pornhub | `https://www.pornhub.com/video/search?search={q}&page={page}` | ja |
+| Beeg | `https://beeg.com/search?q={q}` | nej |
+| YouPorn | `https://www.youporn.com/search/?query={q}&page={page}` | ja |
+| PornTrex | `https://www.porntrex.com/search/{q}/{page}/` | ja |
+
+Sökningen sker parallellt på alla valda sajter (alla om inget valts), och varje sajt
+rapporterar antal träffar (`SiteSearchReport`) – inklusive vilka sajter som felade, med
+möjlighet att utesluta dem och söka igen.
+
+### 7.4 Listningsparsningen (`ExtractorSupport`)
+
+I stället för att lita på varje sajts klassnamn letas **alla länkar** upp som matchar
+sajtens video-URL-mönster, och informationen plockas från närmaste omgivande block
+(`div, li, article, figure, section`):
+
+- **Id**: från URL-mönstret (annars sista vägsegmentet); nyckeln blir `{sajt}_{id}`.
+- **Titel**: `title`-attribut → kända titelselektorer → `img[alt]` → länktexten, och
+  till sist en läsbar titel från URL-sluggen (`blonde_in_the_kitchen_2024` →
+  "Blonde in the kitchen"). Varumärkessuffix som " | Pornhub" klipps bort.
+- **Tumnagel**: `data-src`, `data-original`, `data-thumb`, `data-lazy-src`, `srcset`
+  med flera, normaliserade till HTTPS.
+- **Längd**: kända längdselektorer, annars första `mm:ss`/`h:mm:ss` i blockets text.
+- **Kvalitet**: "4K"/"2160"/"1080"/"720"/"HD" i titeln.
+- **Begränsning**: 36–42 träffar per sajt och sökning, 120 nyckelordskandidater.
+
+---
+
+## 8. Inläsning av all information om filmen
+
+`MetadataExtractor.parse(html, detailUrl, siteName)` läser detaljsidan i denna
+prioritetsordning och fyller `VideoMetadata`:
+
+| Fält | Källor (i ordning) |
+|---|---|
+| **Rubrik** | `og:title` → `twitter:title` → `ld+json name` → `<h1>` → `<title>` |
+| **Beskrivning** | `og:description` → `meta[description]` → `twitter:description` → `ld+json description` → vanliga beskrivningsbehållare (max 1 500 tecken, blanksteg städat) |
+| **Taggar** | länkar med taggmönster (`/tag/`, `tag=`, `/keyword` …) → `ld+json keywords` → typiska taggbehållare → `meta[name=keywords]` |
+| **Kategorier** | länkar med `/category`, `/channel`, `/genre` → `ld+json genre` |
+| **Medverkande** | länkar med `/pornstar`, `/model`, `/actress`, `/performer` → `ld+json actor` och `director` |
+| **Kvalitet** | `og:video:height` → `itemprop=height` → `<video height>` → siffran i rubriken → korta kvalitetsetiketter ("1080p", "HD 720p") |
+| **Längd** | `video:duration`/`og:video:duration`/`itemprop=duration` (sekunder) → `ld+json duration` i ISO 8601 (`PT1H2M3S`) → längd i rubriken |
+| **Datum** | `itemprop=uploadDate` → `ld+json uploadDate` → `<time datetime>` |
+| **Visningar** | `itemprop=interactionCount` → element med "views" |
+| **Borta?** | `StreamSelection.looksRemoved` (t.ex. "video has been removed", "no longer available") → `pageMissing = true` |
+
+Dessutom: navigationsord (Home, Log in, Next, Sök, Nästa …) filtreras bort från
+nyckelord, dubbletter tas bort (skiftlägesokänsligt) och listorna kapas till 40 taggar,
+40 medverkande och 40 kategorier (max 60 nyckelord totalt i `VideoMetadata.keywords`).
+
+`MiniJson` är en liten egen JSON-tolkare (objekt, listor, strängar med escape-sekvenser,
+tal, boolean, null) som används för `application/ld+json`. Den klarar trasig JSON utan
+att krascha (returnerar `null`) och har tester för escapes, nästlade strukturer och
+felaktig indata.
+
+**Resultatet** blir `SearchResult` med `tags` (kombinerade nyckelord), `description`,
+`tagCount`, `qualityLabel`, `durationSeconds` och `playability = PLAYABLE`.
+
+---
+
+## 9. Relevans, taggar och avancerad sökning
+
+### 9.1 Relevanspoäng (`ResultRanker`)
+
+| Regel | Poäng |
+|---|---|
+| Fras finns i rubriken | +40 |
+| Ordmatchning i rubriken (per ord) | +14 |
+| Delsträngsmatch i rubriken | +6 |
+| Term finns i taggar/kategorier | +18 per term |
+| Term finns i beskrivningen | +9 per term |
+| Alla söktermer finns i rubrik+taggar+beskrivning | +30 (annars proportionellt mot täckningen) |
+| Träffen har inläst information | +4 |
+| Träffen är inläst (PLAYABLE) | +8 |
+| Kvalitetsord i rubriken (4k, 1080p, hd …) | +4 |
+| Rubrik kortare än 12 tecken, eller skräpord (trailer, preview, photos …) | −6 |
+
+Dubbletter tas bort på normaliserad titel (skiftlägesokänsligt, skiljetecken bort) och
+den **inlästa** versionen vinner.
+
+### 9.2 Sortering och filter
+
+- **Sortering**: Relevans, Längst först, Kortast först, Källa (träffar utan längd sist).
+- **Längdfilter**: Alla längder, Under 5 min, 5–20 min, Över 20 min.
+- **"Bara sidor som svarar"** (på som standard): döljer träffar vars detaljsida inte
+  kunde läsas in eller där innehållet tagits bort. Träffar som läses in just nu visas
+  ändå, med status "Läser info".
+- **Taggfilter**: klick på en tagg filtrerar listan (alla valda taggar måste finnas)
+  och visar "Filtrerar på: …" med en rensa-knapp.
+- **Taggmoln**: de 24 vanligaste taggarna bland aktuella träffar, med antal.
+- **Avancerat sökfält**: matchar fritext mot **all** skrapad text (rubrik, taggar,
+  kategorier, medverkande, beskrivning); träffar som innehåller *alla* orden lyfts
+  först, därefter relevansordning.
+- **Negativa filter**: ord från söktexten och från "Never show again"-regler tas bort
+  både vid insamling och i efterhand (via `Nästa`-menyns blockeringsikon på korten).
+- **Sparade sökningar** och **sökhistorik** (max 12): spara aktuell sökning med namn,
+  återanvänd med ett tryck.
+
+---
+
+## 10. Uppspelning A: WebView-spelaren (standard)
+
+Fil: `ui/web/WebPlayerScreen.kt` + `ui/web/WebAdBlock.kt`.
+
+### 10.1 WebView-konfiguration
+
+| Inställning | Värde | Varför |
+|---|---|---|
+| JavaScript | på | Sajterna kräver det |
+| DOM storage | på | Sajternas spelare använder det |
+| `mediaPlaybackRequiresUserGesture` | av | Videon ska kunna starta direkt |
+| `javaScriptCanOpenWindowsAutomatically` | av | Popups |
+| `setSupportMultipleWindows` | av | Popups |
+| Tredjepartscookies | av | Integritet |
+| `mixedContentMode` | `MIXED_CONTENT_NEVER_ALLOW` | Ingen klartext |
+| `allowFileAccess` / `allowContentAccess` | av | Sandbox |
+| Geolokalisering | av, och behörighetsförfrågningar nekas | Integritet |
+| Safe Browsing (API 26+) | på | Skadliga sidor |
+| User-Agent | Chrome 124 på Android | Sajterna ger mobil-/desktopvariant |
+| Bakgrund | svart | Ingen vit blinkning |
+
+### 10.2 Vad spelaren gör
+
+- **Laddar** `detailUrl` och visar en tunn progressbar högst upp.
+- **Blockerar** resurser till annonsdomäner (`shouldInterceptRequest`) och räknar dem.
+- **Stoppar** navigering: popups (`onCreateWindow`), annonslänkar, länkar till andra
+  sajter och app-scheman (`intent://`, `market://`, `tg://`, …). Klartext (http) nekas.
+- **Injicerar** vid varje sidladdning ett script som:
+  - ersätter `window.open` med en no-op och tar bort `target="_blank"`,
+  - lägger in CSS som gömmer annonsytor och tar bort annons-/popunder-noder
+    (vid 0,8 s, 2,5 s och 6 s),
+  - exponerar hjälpfunktioner: `__pcVideo()` (största videon), `__pcState()`
+    (position, längd, pausad, upplösning), `__pcSeekBy(±s)`, `__pcToggle()`,
+    `__pcControls(on)` och `__pcResume(sekunder)`,
+  - ser till att videon får `playsinline` och `controls`.
+- **Pollning** varje sekund: position, längd, paus-status och blockeringsräknare.
+  Positionen sparas var 5:e sekund och vid stängning.
+- **Återupptagning**: om historiken har en position > 15 s skickas den till
+  `__pcResume`, som sätter `currentTime` så snart längden är känd (> position + 20 s).
+- **Kontroller** (döljs efter 4,5 s när videon spelar):
+  - topprad: tillbaka, rubrik, sajt · kvalitet · längd · antal blockerade, meny (…)
+    med *Ladda om*, *Öppna i webbläsare*, *Visa videokontroller*, *Direktuppspelning
+    (beta)* och val av blockeringsnivå,
+  - taggchips (de första 18) – tryck för att söka på taggen och gå till sökvyn,
+  - beskrivning i två rader,
+  - mitt: föregående, −X s, paus/spela, +X s, nästa (X = inställt spolintervall),
+  - botten: tid, tidslinje, längd och blockeringsstatus,
+  - dubbeltryck: vänster halva = −X s, höger halva = +X s (visar också kontrollerna).
+- **Fel**: om huvudsidan inte kan laddas visas en panel med "Försök igen" och
+  "Öppna i webbläsare".
+- **Stängning**: `BackHandler` går bakåt i webbläsarhistoriken först, därefter stängs
+  spelaren och WebView:n förstörs (`stopLoading`, `about:blank`, `destroy`).
+- **Skärmen** hålls tänd (om inställningen är på) och systemfälten döljs under tiden.
+
+### 10.3 Blockeringsnivåer
+
+| Nivå | Beteende |
+|---|---|
+| **Standard** (rekommenderad) | Annons-/trackingdomäner och annonsvägar blockeras, popups och omdirigeringar stoppas, mediaspelare från andra domäner tillåts |
+| **Strikt** | Som standard, men **all** navigering utanför sajten blockeras (även mediaservrar på andra domäner) |
+| **Av** | Ingen blockering i spelaren (endast användbart för felsökning) |
+
+Nivån väljs i spelarens meny eller i Inställningar och sparas i `AppPreferences`
+(`adblock_level`). Antalet blockerade förfrågningar visas i topp- och bottenraden.
+
+---
+
+## 11. Uppspelning B: den inbyggda spelaren (beta)
+
+Fil: `ui/player/VideoPlayerScreen.kt`. Öppnas via **Direktuppspelning (beta)** i
+WebView-spelarens meny, och kräver att en mediaström kan extraheras (`StreamResolver`).
+
+### 11.1 Extrahering (`StreamResolver` + `StreamSelection`)
+
+1. Detaljsidan hämtas (7 s) och kontrolleras för borttaget innehåll.
+2. Kandidater samlas: `<video>`/`<source>`, råa URL:er i script, relativa mediasökvägar,
+   samt sajtspecifika källor (Beegs API v6).
+3. Kandidater rangordnas (HLS +60, MP4 +40, höjdbonus, HD +14, "preview/trailer/sample"
+   −70) och de sex bästa provas: en `Range: bytes=0-2047`-förfrågan måste svara med
+   video-, HLS- eller octet-stream-typ (text/html och JSON avvisas).
+4. HLS-manifest (max 512 KB) måste börja med `#EXTM3U`; bästa variant läses ut för
+   kvalitetsetiketten ("upp till 4K" / "Adaptiv").
+5. Resultatet cachas i 20 minuter (max 400 poster) och kan tvingas fram på nytt.
+
+### 11.2 Spelaren
+
+- **ExoPlayer** med egen `DefaultTrackSelector`, `DefaultLoadControl`
+  (15 s min / 60 s max buffert, 1,5 s före uppspelning, 3 s efter ombuffring) och
+  decoder-fallback. Egen `DefaultHttpDataSource` med UA, `Referer`/`Origin` från
+  detaljsidan, 15 s connect / 20 s read och tillåtna korsprotokollsomdirigeringar.
+- **Kvalitetsmeny** från strömmens egna spår: Automatisk, Högsta möjliga,
+  Spara data (max 480p / 900 kbps) samt varje höjd (1080p · 3,2 Mbps …) via
+  track selector-parametrar (`clearVideoSizeConstraints`, `setMaxVideoSize`,
+  `setMaxVideoBitrate`, `setForceHighestSupportedBitrate`).
+- **Skrubbning**: egen Canvas-tidslinje (spelat, buffrat, tumme) där tryck hoppar
+  direkt och drag skrubbar; under drag används `SeekParameters.CLOSEST_SYNC` med
+  förhandsvisning var 180:e ms, och exakt position sätts när du släpper.
+- **Gester**: tryck = visa/dölj kontroller; dubbeltryck vänster (<40 %) = −X s,
+  höger (>60 %) = +X s, mitten = paus/spela (med haptik); horisontellt drag var som
+  helst = skrubbning (känslighet 0,45 av skärmbredden per drag); vertikalt drag
+  vänster = ljusstyrka, höger = volym (HUD som visas i 0,9 s).
+- **Övrigt**: hastigheter 0,5–2×, bildläge (anpassa/fyll/zooma), buffringsspinner,
+  tidsvisning (12:34 / 1:02:03), "Fortsätter från …" med "Börja om", felpanel med
+  "Försök igen" och "Nästa video", samt kö-knappar för nästa/föregående.
+- **Progress** sparas var 5:e sekund och vid stängning.
+
+---
+
+## 12. Annonsblockering i detalj
+
+### 12.1 Den delade listan (`network/AdBlockHosts.kt`)
+
+- **109 tracking-/annonsdomäner**: Google (doubleclick, googlesyndication,
+  google-analytics, googletagmanager, 2mdn), Facebook/FB-CDN, Amazon-adsystem,
+  Criteo, PubMatic, OpenX, Rubicon, Casale, Adform, Smartadserver, Taboola, Outbrain,
+  MGID, RevContent, analysverktyg (Hotjar, Mouseflow, FullStory, New Relic, Segment,
+  Mixpanel, Amplitude, Sentry), statistik (StatCounter, Histats, Yandex Metrika),
+  cam-nätverk (LiveJasmin, BongaCams, Stripchat, Chaturbate, CamSoda, Streamate …)
+  och push-notisnätverk (OneSignal, Notix, SendPulse …).
+- **51 popunder-/redirectnätverk**: JuicyAds, ExoClick, TrafficJunky, TrafficStars,
+  Adsterra, Clickadu, PopAds, PopCash, PropellerAds, HilltopAds, AdCash, Adnium,
+  TSyndicate, OnclickAds, Realsrv, AdTNG, Zangio, Admaven, PlugRush, Monetag,
+  Galaksion, ProfitablerateCPM med flera.
+- **16 app-scheman** som inte får öppnas: `intent`, `market`, `play`, `app`, `tg`,
+  `whatsapp`, `sms`, `tel`, `mailto`, `bitcoin`, `viber`, `line`, `snapchat`, `fb`,
+  `instagram` med flera.
+- **44 annonsvägar** som blockeras även på en tillåten domän: `/popunder`, `pop.js`,
+  `/ads.js`, `/ads/`, `/ad/`, `/vast`, `/vpaid`, `/preroll`, `/banner/`, `/promo/`,
+  `/track.php`, `/click.php`, `/push.js`, `/redirect?`, `/out.php`, `syndication.php`,
+  `/adserver`, `/sponsor/` med flera.
+
+### 12.2 Tre lager av skydd
+
+1. **Appens egen hämtning** (`network/AdBlockInterceptor`): förfrågningar till
+   blockerade värdar kastar `IOException` och når aldrig nätet. `PrivacyInterceptor`
+   tar samtidigt bort trackingparametrar (`utm_*`, `fbclid`, `gclid`, `msclkid`,
+   `dclid`, `twclid`) och identitetsheaders (utom vid Range-prober mot medieservrar,
+   som behöver dem för att fungera).
+2. **WebView-spelaren**: `shouldInterceptRequest` svarar med ett tomt svar för
+   blockerade resurser, `shouldOverrideUrlLoading` stoppar popunder-/annonsnavigering,
+   `onCreateWindow` nekar nya fönster.
+3. **På sidan**: injicerad CSS + script som gömmer och tar bort annonselement direkt
+   och löpande.
+
+Allt detta är **best-effort**: nya annonsnätverk tillkommer löpande och listan i
+`AdBlockHosts.kt` är den enda platsen som behöver uppdateras (den används av båda
+spelarna och all hämtning).
+
+---
+
+## 13. Lagring och datamodell
+
+### 13.1 Room-databasen
+
+`calculator_vault.db`, **version 1**, ingen migration definierad (nya tabellversioner
+kräver en migrering, annars återställs databasen).
+
+| Tabell | Fält |
+|---|---|
+| `videos` | `id` (PK), titel, tumnagel, längd, sajt, detalj-URL, stream-URL, taggar, kvalitet, `addedAt`, `lastWatchedAt` |
+| `favorites` | `videoId` (PK), `addedAt` |
+| `watch_later` | `videoId` (PK), `addedAt` |
+| `dislike_rules` | `id` (auto), `type` (keyword/tag/performer/video/site), `value`, `createdAt` |
+| `search_presets` | `id` (auto), `name`, `query`, `negativeKeywords`, `createdAt` |
+| `app_settings` | `key` (PK), `value` |
+
+Favoriter och watch later är kopplade till `videos` via vyer som läser in video-raden,
+och räknare finns för alla listor (används av bibliotekets översikt).
+
+### 13.2 SharedPreferences
+
+| Fil | Nycklar | Innehåll |
+|---|---|---|
+| `calculator_app_prefs` | `only_playable` (true), `skip_seconds` (10, 5–60), `keep_screen_on` (true), `gesture_seeking` (true), `resume_playback` (true), `preferred_quality` (`auto`), `adblock_level` (`standard`), `search_history` | Alla inställningar + sökhistorik (max 12, radseparerad) |
+| `calculator_playback` | `recent_entries` (JSON, max 40), `pos_<id>`, `dur_<id>` | Uppspelningshistorik och positioner per video |
+| `calculator_content_access` | `adult_content_confirmed` | Åldersbekräftelsen |
+
+**"Fortsätt titta"** visas för videor som spelats mer än 15 sekunder och som inte är
+inom 30 sekunder från slutet. Historiken kan rensas från biblioteket.
+
+### 13.3 Kryptering
+
+Bara PIN-koderna är krypterade (Android Keystore). **Room-databasen och
+SharedPreferences är inte krypterade** – de ligger i appens privata lagring och skyddas
+av Android-sandboxen, inte av kryptering. Det står också i README och i inställningarna.
+
+---
+
+## 14. Behörigheter, säkerhet och integritet
+
+- **Behörigheter**: endast `INTERNET` och `ACCESS_NETWORK_STATE`. Inga kamera-,
+  mikrofon-, lagrings- eller platsbehörigheter.
+- **Klartext**: `usesCleartextTraffic="false"` + `network_security_config.xml` som
+  tillåter HTTPS och systemets certifikat. All hämtning kontrollerar dessutom
+  `isHttps` innan en förfrågan byggs.
+- **Screenshots och app-switcher**: `FLAG_SECURE`.
+- **Ingen kontoinloggning** och inga uppgifter skickas någonstans: all logik körs
+  lokalt, sökningar går direkt till sajterna.
+- **Sandboxad WebView**: ingen fil-/innehållsåtkomst, inga tredjepartscookies, inga
+  behörigheter, ingen geolokalisering.
+- **Annonsblockering** som även döljer delar av sajternas spårning.
+- **Åldersblockering**: `AgeSafety` filtrerar både sökord och träffrubriker, och
+  taxonomin innehåller inga sådana termer (testas).
+
+---
+
+## 15. Kvalitetssäkring: tester och CI
+
+### 15.1 Enhetstester (87 testfall, JVM)
+
+| Fil | Testar |
+|---|---|
+| `ai/AgeSafetyTest.kt` | Blocklistan i båda språken, hela ord, att vanliga ord inte fastnar, blockerade planer |
+| `ai/SearchPlannerTest.kt` | Huvudsökning, varianter, negativa filter, svenska → engelska, citat, kategorier, tak på frågor, förklaringstext |
+| `data/taxonomy/SearchTaxonomyTest.kt` | Unika id:n, etiketter, gemena engelska termer, uppslag, inga blockerade ålderstermer |
+| `data/extractor/ExtractorSupportTest.kt` | Listningsparsning, titelstädning, slug-fallback, kvalitet, HTTPS-krav |
+| `data/extractor/MetadataExtractorTest.kt` | Rubrik, beskrivning, taggar, medverkande, kategorier, kvalitet, längd (inkl. ISO 8601), borttagna sidor, nyckelordstak, täckning |
+| `data/extractor/MiniJsonTest.kt` | JSON-parsning, escapes/unicode, trasig indata, nästlad sökning, listor |
+| `data/extractor/StreamSelectionTest.kt` | HTTPS-krav, medietyper, rangordning, HLS-varianter, borttagna sidor, innehållstyper |
+| `data/model/DurationParserTest.kt` | Kolon- och ordformat, ogiltig indata, formatering |
+| `data/model/ResultRankerTest.kt` | Relevans (rubrik/taggar/beskrivning), täckning, dubbletter, sortering, taggfilter, taggmoln, skrapad sökning |
+| `ui/web/WebAdBlockTest.kt` | Blockerade domäner/vägar, navigeringsbeslut, samma-sajt-logik (inkl. `co.uk`), injektionsscript, JS-escape |
+
+Kör dem med `./gradlew testDebugUnitTest`.
+
+### 15.2 CI
+
+Varje push kör workflowen: JDK 17 → Android SDK 35 → `testDebugUnitTest` +
+`assembleDebug` → artifact. Vid fel skrivs Kotlin-fel och misslyckade tester dels som
+**annotations** på körningen, dels i jobbets **summary** (med testresultat-XML) – så att
+fel kan läsas utan att ladda ner loggen.
+
+---
+
+## 16. Kända begränsningar
+
+1. **Uppspelning sker på sajternas sidor.** Kvalitet och spelarkontroller beror därför
+   på sajten. Appen kan inte tvinga fram högre kvalitet än sajten erbjuder, och kan inte
+   styra sajtens egen spelare mer än via filmens `<video>`-element (spolning, paus,
+   återupptagning fungerar; kvalitetsval gör det bara i beta-spelaren).
+2. **"Allt som händer i filmen"** betyder allt sajten själv skriver: rubrik, taggar,
+   kategorier, medverkande och beskrivning. Ingen bild- eller ljudanalys görs.
+3. **Scraping är best-effort.** Ändrar en sajt sin HTML eller sina URL:er slutar
+   parsningen att ge träffar tills `ExtractorSupport`/konfigurationen uppdateras.
+4. **Annonsblockeringen är best-effort.** Nya nätverk och nya trick dyker upp; listan
+   behöver underhållas.
+5. **Sidor som kräver inloggning eller har aggressiva captchas** kan visa sig sämre i
+   WebView:n, särskilt i strikt läge.
+6. **Databasen är inte krypterad** och har ingen migreringsstrategi ännu (version 1).
+7. **Inga instrumenterade UI-tester** – testerna täcker den rena logiken, inte
+   skärmarna.
+8. **Nätverksberoende tester saknas** (medvetet): tester får aldrig kräva internet.
+9. **Språket är hårdkodat på svenska** i koden (`strings.xml` innehåller bara appnamnet).
+10. **Ålderskontrollen är en självbekräftelse**, inte en verifiering.
+
+---
+
+## 17. Alla viktiga konstanter
+
+| Område | Konstant | Värde |
+|---|---|---|
+| Sökning | Max kandidater i minnet | 140 |
+| Sökning | Vågstorlek vid inläsning | 10 träffar |
+| Sökning | Mål för inlästa träffar per sökning | 20 |
+| Sökning | Max vågor / budget per sökning | 6 vågor / 60 träffar |
+| Sökning | Budget för "Ladda fler" | 30 träffar |
+| Sökning | Max frågor per sökning | 5 |
+| Sökning | Samtidiga hämtningar vid inläsning | 8 |
+| Sökning | Max träffar per sajt och fråga | 36 (vissa 42) |
+| Sökning | Taggmolnets storlek | 24 taggar |
+| Nätverk | Timeout vid sidhämtning | 12 s, max 6 MB |
+| Nätverk | OkHttp-timeouts | 20 s anrop, 12 s connect/read/write |
+| Metadata | Beskrivning | max 1 500 tecken, 40 per lista, 60 nyckelord |
+| Ström | Cachelagring | 20 minuter, 400 poster |
+| Ström | Prober | 6 kandidater, `bytes=0-2047`, 4,5 s, HLS max 512 KB |
+| Beta-spelare | Buffert | 15 s min / 60 s max, 1,5 s / 3 s |
+| Beta-spelare | Skrubbning | känslighet 0,45, förhandsvisning var 180:e ms |
+| Beta-spelare | Progress | var 500:e ms, sparas var 5:e s |
+| Beta-spelare | Återupptagning | > 15 s, marginal 20 s från slutet |
+| Beta-spelare | Dataspararläge | 480p, 900 kbps |
+| Beta-spelare | Hastigheter | 0,5 / 0,75 / 1 / 1,25 / 1,5 / 1,75 / 2× |
+| WebView-spelare | Pollning / sparning | 1 s / var 5:e s |
+| WebView-spelare | Kontroller döljs efter | 4,5 s |
+| Historik | Max poster / tröskel | 40 / 15 s (slutmarginal 30 s) |
+| Historik | Sökhistorik | max 12 |
+| Spolintervall | Valfria värden | 5, 10, 15, 30 s |
+
+---
+
+## 18. Utvecklingshistorik
+
+Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) innehåller
+12 commits:
+
+| Commit | Innehåll |
+|---|---|
+| `8409e31` | Ny sökpipeline: taxonomi, frågeplanering, verifiering av strömmar |
+| `8981589` | Fix av `list.first()`-anrop + första versionen av nya spelaren |
+| `5693b94` | Nytt UI-lager: tema, komponenter, startsida, sökskärm, bibliotek, inställningar, ny `VaultScreen` |
+| `efb35d9` | Spelaren: `keepScreenOn` via `this` i `PlayerView.apply` |
+| `d92abcc` | Enhetstester för taxonomi, strömval, rankning, längdtolkning; CI visar testfel som annotations |
+| `a67790b` | Bara inlästa träffar som standard + uppdaterad README |
+| `687b055` | Dynamiska hoppikoner, haptik, skydd mot smal tidslinje |
+| `414a149` | Sökningen visar vilka sajter som felar och hur man utesluter dem |
+| `9aa2c7b` | **WebView-spelare med annonsblockering + inläsning av all filminformation** |
+| `d100173` | `PlayerState` blir `internal` (publik funktion läckte privat typ) |
+| `6696bf3` | Saknad `assertFalse`-import i testet |
+| `4065589` | Kvalitetsavläsning av korta etiketter + testfall med identiska rubriker |
+
+Senaste gröna CI-körning: **38409851452** (tester + APK, 21,7 MB).
+
+---
+
+## 19. Ordlista
+
+| Term | Betydelse |
+|---|---|
+| **Vault** | Den dolda delen av appen bakom PIN + biometri |
+| **Decoy** | Reservkoden som öppnar en oskyldig vy i stället |
+| **Träff / resultat** | En video i resultatlistan (`SearchResult`) |
+| **Inläsning / enrich** | Hämtning av detaljsidan för att läsa ut all metadata |
+| **Playability** | `PLAYABLE` = sidan svarar och innehållet finns; `CHECKING` = läses in nu; `UNPLAYABLE` = borta/osvarar; `UNVERIFIED` = ej påbörjad |
+| **Taggmoln** | De vanligaste taggarna bland aktuella träffar, klickbara |
+| **Kö** | Träffarna i aktuell ordning, så att nästa/föregående fungerar i spelaren |
+| **Blockeringsnivå** | Standard / Strikt / Av för WebView-spelaren |
+| **Beta-spelare** | Den inbyggda ExoPlayer-spelaren som använder en extraherad ström |
+
+---
+
+## 20. Juridik och ansvar
+
+- Appen är avsedd för **personligt bruk**.
+- Allt innehåll tillhör respektive sajt och rättighetsinnehavare. Appen lagrar inget
+  innehåll, utan visar sajternas egna sidor i en webbläsare och listar deras offentliga
+  sökresultat.
+- Scraping kan strida mot en sajts användarvillkor – kontrollera dem och följ dem.
+- **Kontrollera att du följer lokal lagstiftning** där du befinner dig, inklusive regler
+  om vuxet material, upphovsrätt och ålder.
+- Appen innehåller filter mot innehåll som kan avse minderåriga, men **ingen teknisk
+  åldersverifiering** av medverkande eller användare.
+- Författaren till appen ansvarar inte för hur den används.
+
+---
+
+*Dokumentet beskriver appen vid commit `4065589` på branchen
+`arena/a0d9d445-calculator-69`. Ändras koden ändras detaljerna – kör testerna och
+bygg APK via CI för att verifiera.*
