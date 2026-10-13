@@ -1012,11 +1012,11 @@ milstolpar, inte en fullständig lista över varje commit.
 | `650fc10` | Merge av PR #4 till `main` |
 | `fb47444`, `5a8c27b` | PR #5: källsajtbegränsade sökomdirigeringar, detaljlänkar, HTML5-helscreen-host, bounded resume-data och regressionsfixar |
 
-Senaste gröna snabba CI-körning: **38463103371** (JVM-tester, lint, APK och kompilering av
-instrumenterade tester). Emulatorn körde även de **17 instrumenterade regressionerna** i
-**38463103444**. Den första körningen på den här grenen (`38462442461`) fångade ett Kotlin-
-kompileringsfel i testets OkHttp DNS-resolver; det rättades i `5a8c27b` och båda workflows
-passerade därefter.
+Grön verifiering av appkoden: snabbworkflow **38463103371** (JVM-tester, lint, APK och
+kompilering av instrumenterade tester) samt emulatorworkflow **38463103444** (17
+instrumenterade regressioner). Dokumentationsuppdateringen `7425c85` verifierades separat
+i snabbworkflow **38463910618**. Den första appkodskörningen (`38462442461`) fångade ett
+Kotlin-kompileringsfel i testets OkHttp DNS-resolver; det rättades i `5a8c27b`.
 
 ---
 
