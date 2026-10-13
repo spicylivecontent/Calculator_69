@@ -145,8 +145,8 @@ object ExtractorSupport {
             if (!detailUrl.startsWith("https://")) continue
 
             val path = detailUrl.substringAfter("://").substringAfter('/', "").substringBefore('?')
-            val id = path.trimEnd('/').substringAfterLast('/').ifBlank { continue }
-            if (id.length > 64) continue
+            val id = path.trimEnd('/').substringAfterLast('/')
+            if (id.isBlank() || id.length > 64) continue
 
             val container = anchor.closest("div, li, article, figure, section") ?: anchor.parent() ?: anchor
             val title = titleFrom(anchor, container, genericConfig(siteName, baseUrl)) ?: continue

@@ -128,18 +128,18 @@ private fun VaultContent(
     val context = LocalContext.current
     val application = remember(context) { context.applicationContext as Application }
 
-    // Panik/lås: töm känsliga data ur minnet innan appen lämnar vaulten.
-    val lockEverything: () -> Unit = {
-        searchViewModel.clearSensitiveState()
-        onLock()
-    }
-
     var currentTab by remember { mutableStateOf(VaultTab.HOME) }
     var pendingCategoryId by remember { mutableStateOf<String?>(null) }
     var pinToChange by remember { mutableStateOf<String?>(null) }
 
     val searchViewModel: SearchViewModel = viewModel(factory = SearchViewModelFactory(application))
     val libraryViewModel: LibraryViewModel = viewModel(factory = LibraryViewModelFactory(application))
+
+    // Panik/lås: töm känsliga data ur minnet innan appen lämnar vaulten.
+    val lockEverything: () -> Unit = {
+        searchViewModel.clearSensitiveState()
+        onLock()
+    }
 
     val favorites by libraryViewModel.favorites.collectAsState()
     val watchLater by libraryViewModel.watchLater.collectAsState()
