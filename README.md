@@ -57,6 +57,13 @@ Workflowen **Build APK** körs automatiskt vid push till valfri branch och kan o
 
 Varje träff kontrolleras innan den visas: appen hämtar detaljsidan, läser in informationen och markerar träffen som inläst ("Sidan svarar"). Träffar vars sida inte svarar, eller där innehållet tagits bort, döljs när filtret **"Bara sidor som svarar"** är på (standard). Under tiden listan fylls på visas de träffar som är under inläsning med status "Läser info".
 
+## Tester
+
+`./gradlew testDebugUnitTest` kör 145 enhetstester på JVM (logik, parsning och hela
+nätverkskedjan mot en lokal server). `./gradlew connectedDebugAndroidTest` kör sju
+Compose-tester på en enhet eller emulator: kalkylatorns display, kodvalet och att en
+felaktig kod inte öppnar vaulten. Båda körs automatiskt i GitHub Actions.
+
 ## Sajter som kan rättas utan en ny APK
 
 En sajt som byter adress eller layout kan rättas i `scrape-rules.json` i det här repot. Appen

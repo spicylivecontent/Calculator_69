@@ -72,8 +72,9 @@ stället – för situationer där någon annan tittar.
 | Bilder | Coil 2.7.0 (crossfade) |
 | Övrigt | exp4j 0.4.8 (matte), androidx.biometric 1.1.0, coroutines 1.9.0 |
 | Enhetstester | **145 testfall i 18 filer** (körs på JVM, ingen enhet krävs) |
-| CI | GitHub Actions: `testDebugUnitTest assembleDebug` vid varje push |
-| APK (debug) | ca 21,7 MB, artifact **Calculator-debug-apk** |
+| UI-tester | **7 Compose-tester i `app/src/androidTest`** som körs på en emulator i CI |
+| CI | GitHub Actions: enhetstester + APK vid varje push, Compose-tester på emulator när appkoden ändras |
+| APK (debug) | ca 24,7 MB, artifact **Calculator-debug-apk** (tak i CI: 40 MB) |
 | Sajter | 10 stycken (se avsnitt 7) |
 | Kategorier / underkategorier | 12 / 106 |
 | Blockerade annonsdomäner | 148 unika (109 trackers + 51 popunder), 16 app-scheman, 44 annonsvägar |
@@ -251,6 +252,13 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 | `security/SecureValue.kt` | 22 | Läser och skriver känsliga inställningar krypterat |
 | `security/SqlCipherLoader.kt` | 24 | Laddar det inbyggda SQLCipher-biblioteket en gång, med fallback |
 | `CalculatorApp.kt` | 55 | Applikationsklass: Coil-cache med fasta gränser + migrering vid start |
+
+**Tester**
+
+| Fil | Rader | Innehåll |
+|---|---|---|
+| `app/src/test/**` (18 filer) | 2 199 | Enhetstester på JVM – logik, parsning, nätverkskedjan mot MockWebServer |
+| `app/src/androidTest/**` (2 filer) | 211 | Compose-tester som körs på en emulator: `CalculatorUiTest` och `CleanAppStateRule` |
 
 ---
 
@@ -850,12 +858,43 @@ biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
 Kör dem med `./gradlew testDebugUnitTest`. Testerna kräver inget internet: den enda som
 talar med en server gör det mot en lokal MockWebServer med eget certifikat.
 
-### 15.2 CI
+### 15.2 UI-tester på enhet (7 testfall, `app/src/androidTest`)
 
-Varje push kör workflowen: JDK 17 → Android SDK 36 → `testDebugUnitTest` +
-`assembleDebug` → artifact. Vid fel skrivs Kotlin-fel och misslyckade tester dels som
-**annotations** på körningen, dels i jobbets **summary** (med testresultat-XML) – så att
-fel kan läsas utan att ladda ner loggen.
+De instrumenterade tester som enhetstesterna inte kommer åt: att skärmarna ritas, att
+knappar och fält reagerar, och att en felaktig kod faktiskt inte öppnar vaulten.
+
+| Test | Vad den kontrollerar |
+|---|---|
+| `pinSetupRejectsMismatchedConfirmation` | Fel bekräftelse ger felmeddelande och stannar kvar på kodvalet |
+| `pinSetupRejectsEqualCodes` | Huvudkod och reservkod får inte vara lika |
+| `savingThePinsShowsTheCalculator` | Sparade koder lämnar kodvalet och visar kalkylatorn |
+| `typedDigitsCanBeClearedAndDeleted` | Siffror samlas i displayen, `C` nollställer och backsteg tar bort en siffra |
+| `aCalculationShowsItsResult` | `6*7=` ger 42 i resultatraden och i historiken |
+| `aWrongCodeIsCalculatedInsteadOfOpeningTheVault` | En felaktig kod räknas ut som ett tal – vaulten förblir stängd |
+| `theMainCodeIsNotCalculatedButStartsTheUnlock` | Rätt kod töms utan att räknas ut och går vidare till biometrin |
+
+`CleanAppStateRule` tömmer inställningsfilerna och databasfilerna före varje test och ligger
+**före** Compose-regeln, så att aktiviteten inte hinner starta med ett gammalt tillstånd.
+Kalkylatorns display har testtaggarna `calculator_input` och `calculator_result`, eftersom
+siffrorna annars finns både som knapptext och som displaytext. Testerna stannar medvetet
+vid kalkylatorn och kodvalet: de rör aldrig vaulten efter upplåsning (där finns databasen,
+och upplåsningen kräver biometri som en emulator inte har).
+
+Kör dem med `./gradlew connectedDebugAndroidTest` (kräver en enhet eller emulator).
+
+### 15.3 CI
+
+Två workflows körs:
+
+| Workflow | Vad den gör | När |
+|---|---|---|
+| `Build APK` | JDK 17 → Android SDK 36 → `testDebugUnitTest` + `assembleDebug` + `assembleDebugAndroidTest` (kompilerar även UI-testerna) → storlekskontroll av APK:n → artifact | varje push |
+| `Android UI tests` | KVM → emulator (API 34, `google_apis`, `pixel_5`) → `connectedDebugAndroidTest` → testrapport som artifact | när appkoden ändras (inte för dokumentation) |
+
+Vid fel skrivs Kotlin-fel och misslyckade tester dels som **annotations** på körningen,
+dels i jobbets **summary** (med testresultat-XML) – så att fel kan läsas utan att ladda ner
+loggen. Emulatorjobbet tar omkring 8 minuter; den senaste gröna körningen av båda jobben är
+`e04bc46`.
 
 ---
 
@@ -883,8 +922,10 @@ fel kan läsas utan att ladda ner loggen.
    oanvändbar, men det betyder att skyddet beror på enheten.
 8. **Fjärrreglerna pekar på repots `main`-branch**, så mekanismen är aktiv först när
    `scrape-rules.json` finns där. Byter filen adress måste `ScrapeRuleStore.RULES_URL` byggas om.
-9. **Inga instrumenterade UI-tester** – testerna täcker logiken och nätverkskedjan mot en
-   lokal server, inte skärmarna.
+9. **UI-testerna stannar vid kalkylatorn och kodvalet.** De instrumenterade testerna rör
+   aldrig vaulten efter upplåsning (där finns databasen, och upplåsningen kräver biometri
+   som emulatorn saknar), så biblioteket, sökningen och spelaren är fortfarande bara
+   indirekt täckta.
 10. **Inga tester mot riktiga sajter** (medvetet): testerna får aldrig kräva internet.
 11. **Språket är hårdkodat på svenska** i koden (`strings.xml` innehåller bara appnamnet).
 12. **Ålderskontrollen är en självbekräftelse**, inte en verifiering.
@@ -953,7 +994,7 @@ fel kan läsas utan att ladda ner loggen.
 ## 18. Utvecklingshistorik
 
 Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) innehåller
-25 commits:
+29 commits:
 
 | Commit | Innehåll |
 |---|---|
@@ -978,10 +1019,13 @@ Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) inneh�
 | `0f47ec4` | **Fjärrkonfigurerbara skrapregler** (`scrape-rules.json`, validering, cache, inställningar) + `ScrapeRuleTest` |
 | `34c8f04` | **MockWebServer-tester** över TLS + injicerbar klient i `Fetch`/`MetadataExtractor` |
 | `c677a06`, `6f39e04`, `7fe21b9` | Dokumentationen uppdaterad (kryptering, robusthet, fjärrregler, tester) |
+| `4056921` | **Instrumenterade UI-tester**: sju Compose-tester, `CleanAppStateRule`, testtaggar i displayen och en egen workflow med emulator |
+| `95fcaa5`, `ef94c0f`, `e04bc46` | Tester och CI: dash-säkert skript i emulatorjobbet, `assembleDebugAndroidTest` i det snabba jobbet, rättad import (`onAllNodes` är en medlemsfunktion) |
 | `82dbbc1` | **Säkerhet**: krypterad sökhistorik och uppspelningshistorik (`CipherPayload`, `SecureValue`), autolås vid bakgrund och inaktivitet + `CipherPayloadTest` |
 | `612f66a` | **Stabilitet och UX**: omförsök med backoff i `Fetch`, batterisparläge, sajter som kan stängas av permanent, rättad "Fortsätt titta" (positionerna sammanfogas igen), Dependabot, APK-storlekskontroll, snapshot-test av rangordningen + `FetchRetryTest` |
 
-Senaste gröna CI-körning: **38441282284** (`9993853`, 145 testfall + APK, 24,7 MB). Två
+Senaste gröna körningar: **38445633995** (`Build APK`, 145 enhetstester + APK 24,7 MB)
+och **38445634008** (`Android UI tests`, 7 tester på emulator). Två
 körningar före den var röda: `82dbbc1` föll på att `PlaybackStore` hade tappat fyra
 funktioner (`savePlayed`, `recent`, `continueWatching`, `clear`) som `SearchViewModel`
 anropar – de återställdes i `612f66a`, som också ser till att positionerna sammanfogas med
