@@ -73,7 +73,8 @@ krävs, versionen måste vara nyare än appens, och regler som inte klarar kontr
 - En ålderbekräftelse visas innan vuxeninnehåll öppnas; det är endast en självbekräftelse, inte faktisk åldersverifiering.
 - Sökningar och träffar filtreras mot en blocklista så att innehåll som kan avse minderåriga stoppas, och taxonomin innehåller inga sådana termer (verifieras i enhetstesterna).
 - Uppspelning sker i en sandboxad WebView utan fil- eller innehållsåtkomst, utan tredjepartscookies och utan behörigheter, medan all egen hämtning går via HTTPS med annons- och trackingblockering.
-- Sökresultat, favoriter och uppspelningshistorik lagras lokalt i appens privata lagring. **Hela Room-databasen är krypterad med SQLCipher** och nyckeln förvaras krypterad (AES/GCM) i Android Keystore. Sök- och uppspelningshistorik samt andra SharedPreferences ligger fortfarande i klartext i appens privata lagring, så appen ska inte ses som skydd mot en rootad eller komprometterad enhet.
+- Sökresultat, favoriter och uppspelningshistorik lagras lokalt i appens privata lagring. **Hela Room-databasen är krypterad med SQLCipher**, och **sökhistorik, uppspelningshistorik och positioner krypteras värde för värde** (AES/GCM) med nycklar i Android Keystore. Enklare inställningar (spolintervall, kvalitet, växlar) ligger i klartext, så appen ska inte ses som skydd mot en rootad eller komprometterad enhet.
+- **Autolås** (valfritt): vaulten låser sig när appen lämnas eller efter 1/5 minuters inaktivitet, och nästa upplåsning kräver kod och biometri igen.
 
 ## Sajter
 

@@ -71,7 +71,7 @@ stället – för situationer där någon annan tittar.
 | Nätverk | OkHttp 4.12.0 + Jsoup 1.18.1 |
 | Bilder | Coil 2.7.0 (crossfade) |
 | Övrigt | exp4j 0.4.8 (matte), androidx.biometric 1.1.0, coroutines 1.9.0 |
-| Enhetstester | **87 testfall i 10 filer** (körs på JVM, ingen enhet krävs) |
+| Enhetstester | **145 testfall i 18 filer** (körs på JVM, ingen enhet krävs) |
 | CI | GitHub Actions: `testDebugUnitTest assembleDebug` vid varje push |
 | APK (debug) | ca 21,7 MB, artifact **Calculator-debug-apk** |
 | Sajter | 10 stycken (se avsnitt 7) |
@@ -740,14 +740,18 @@ flera) som bara används av migreringen.
 
 | Fil | Nycklar | Innehåll |
 |---|---|---|
-| `calculator_app_prefs` | `only_playable` (true), `skip_seconds` (10, 5–60), `keep_screen_on` (true), `gesture_seeking` (true), `resume_playback` (true), `preferred_quality` (`auto`), `adblock_level` (`standard`), `remote_rules_enabled` (true), `search_history` | Alla inställningar + sökhistorik (max 12, radseparerad) |
-| `calculator_playback` | `recent_entries` (JSON, max 40), `pos_<id>`, `dur_<id>` | Uppspelningshistorik och positioner per video |
+| `calculator_app_prefs` | `only_playable` (true), `skip_seconds` (10, 5–60), `keep_screen_on` (true), `gesture_seeking` (true), `resume_playback` (true), `preferred_quality` (`auto`), `adblock_level` (`standard`), `remote_rules_enabled` (true), `auto_lock` (`background`), `disabled_sites`, `search_history` | Alla inställningar + sökhistorik (max 12, radseparerad, **krypterad**) |
+| `calculator_playback` | `recent_entries` (JSON, max 40), `positions` (JSON-karta) | Uppspelningshistorik och positioner per video, **båda krypterade** |
 | `calculator_content_access` | `adult_content_confirmed` | Åldersbekräftelsen |
 | `calculator_vault_secret` | `db_passphrase` | Databasens nyckel, krypterad (se 13.3) |
 | `calculator_scrape_rules` | `rules_json`, `rules_version`, `rules_fetched_at` | Hämtade skrapregler + när de hämtades |
 
 **"Fortsätt titta"** visas för videor som spelats mer än 15 sekunder och som inte är
-inom 30 sekunder från slutet. Historiken kan rensas från biblioteket.
+inom 30 sekunder från slutet. Historiken kan rensas från biblioteket. Positionerna sparas
+var femte sekund i den egna kartan `positions` (`video-id` → `[position, längd]`), och
+kartan sammanfogas med historiken när den läses – annars skulle "Fortsätt titta" stå still
+på noll. `positions` ligger krypterad, och de gamla nycklarna `pos_<id>`/`dur_<id>` flyttas
+in i kartan en gång och raderas därefter.
 
 ### 13.3 Kryptering
 
@@ -772,9 +776,20 @@ biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
 * **Fallback**: kan SQLCipher eller Keystore inte användas (till exempel en enhet där det
   inbyggda biblioteket saknas) fortsätter appen med den gamla okrypterade filen i stället
   för att krascha eller visa ett tomt bibliotek.
-* **SharedPreferences är fortfarande okrypterade** (utom databasens nyckel). Sök- och
-  uppspelningshistorik rensas ur minnet vid panik/lås (`clearSensitiveState`), men ligger
-  i klartext i appens privata lagring medan den används.
+* **Sökhistorik, uppspelningshistorik och positioner** ligger sedan `82dbbc1` också
+  krypterade, värde för värde, med samma Keystore-nyckel. Formatet är
+  `enc:` + Base64(`[IV-längd][IV][chiffertext]`) och sköts av `security/CipherPayload.kt`
+  (ren logik, enhetstestad) via `CipherPayload`/`SecureValue`. Ett värde som inte går att
+  dekryptera läses som `null` i stället för att krascha – historiken framstår då som tömd.
+* **Äldre klartextvärden** läses som de är och krypteras nästa gång de skrivs, så ingen
+  historik tappas vid uppdateringen. Övriga inställningar (kvalitet, spolintervall,
+  växlar) ligger kvar i klartext – de innehåller inget känsligt.
+* **Autolås** valfritt i inställningarna: `background` (standard, låser när appen lämnas,
+  via `onStop` och inte vid en rotationsändring), `1min`, `5min` eller `never`.
+  Inaktivitetskollen ligger i `VaultScreen` (`rememberAutoLockModifier`: en räknare som
+  nollställs av varje pekning och kontrolleras var femte sekund) och konsumerar inga
+  pekningar, så spelare och listor fungerar som vanligt. Vid låsning töms känsliga data
+  ur minnet (`clearSensitiveState`) och nästa upplåsning kräver kod igen.
 
 ---
 
@@ -806,7 +821,7 @@ biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
 
 ## 15. Kvalitetssäkring: tester och CI
 
-### 15.1 Enhetstester (128 testfall, JVM)
+### 15.1 Enhetstester (145 testfall, JVM)
 
 | Fil | Testar |
 |---|---|
@@ -817,14 +832,16 @@ biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
 | `data/extractor/GenericListingTest.kt` | Reservparsning: videolänkar utan klassnamn, filtrering av tagg-/kategorilänkar, dedup, HTTPS |
 | `data/extractor/SiteConfigTest.kt` | Alla tio sajter: unika id:n, HTTPS-sök-URL med orden kvar, att mönstret matchar sajtens egna länkar, konsekvent konfiguration |
 | `data/extractor/ScrapeRuleTest.kt` | Fjärrregler: tolkning, HTTPS-krav, `{query}`, trasig regex, versionskrav, tak för selektorer/limit, nya sajter, namnvalidering |
-| `data/extractor/PipelineMockWebServerTest.kt` | Hela kedjan mot en lokal HTTPS-server (MockWebServer): lista → träffar, detaljsida → metadata, borttagen sida, serverfel, omdirigering, iso-8859-1, att klartext aldrig hämtas |
+| `data/extractor/FetchRetryTest.kt` | Omförsökspolicyn: nätverksfel och 5xx/429 görs om, 404/403 och klartext aldrig, antalet försök respekteras |
+| `security/CipherPayloadTest.kt` | Formatet för krypterade värden: in- och utpackning, tomma värden, klartext, trasiga och trunkerade värden |
+| `data/extractor/PipelineMockWebServerTest.kt` | Hela kedjan mot en lokal HTTPS-server (MockWebServer): lista → träffar, detaljsida → metadata, borttagen sida, serverfel, omförsök vid tillfälligt fel, att en 404 inte görs om, omdirigering, iso-8859-1, att klartext aldrig hämtas |
 | `data/extractor/MetadataExtractorTest.kt` | Rubrik, beskrivning, taggar, medverkande, kategorier, kvalitet, längd (inkl. ISO 8601), borttagna sidor, nyckelordstak, täckning |
 | `data/extractor/MiniJsonTest.kt` | JSON-parsning, escapes/unicode, trasig indata, nästlad sökning, listor |
 | `data/extractor/StreamSelectionTest.kt` | HTTPS-krav, medietyper, rangordning, HLS-varianter, borttagna sidor, innehållstyper |
 | `data/model/DurationParserTest.kt` | Kolon- och ordformat, ogiltig indata, formatering |
 | `data/VaultDatabasePlanTest.kt` | Filval: migrering körs exakt en gång, ingen dubbelimport, fallback när kryptering saknas |
-| `network/NetworkConditionTest.kt` | Parallellitet och tidsgränser för Wi-Fi, mobildata, offline och okänt läge |
-| `data/model/ResultRankerTest.kt` | Relevans (rubrik/taggar/beskrivning), täckning, dubbletter, sortering, taggfilter, taggmoln, skrapad sökning |
+| `network/NetworkConditionTest.kt` | Parallellitet och tidsgränser för Wi-Fi, mobildata, offline och okänt läge, batterisparlägets halvering |
+| `data/model/ResultRankerTest.kt` | Relevans (rubrik/taggar/beskrivning), täckning, dubbletter, sortering, taggfilter, taggmoln, skrapad sökning, snapshot av rangordningen |
 | `ui/web/WebAdBlockTest.kt` | Blockerade domäner/vägar, navigeringsbeslut, samma-sajt-logik (inkl. `co.uk`), injektionsscript, JS-escape |
 
 Kör dem med `./gradlew testDebugUnitTest`. Testerna kräver inget internet: den enda som
@@ -854,9 +871,10 @@ fel kan läsas utan att ladda ner loggen.
    behöver underhållas.
 5. **Sidor som kräver inloggning eller har aggressiva captchas** kan visa sig sämre i
    WebView:n, särskilt i strikt läge.
-6. **Databasen är krypterad, men bara databasen.** SharedPreferences (utom databasens
-   nyckel) ligger i klartext i appens privata lagring. Databasen har version 1 och därmed
-   ingen schemamigrering ännu.
+6. **Det känsliga innehållet är krypterat, men inte allt.** Databasen (SQLCipher) samt
+   sökhistorik, uppspelningshistorik och positioner (AES/GCM per värde) är skyddade.
+   Kvar i klartext ligger ofarliga inställningar som spolintervall, kvalitet och växlar.
+   Databasen har version 1 och därmed ingen schemamigrering ännu.
 7. **Krypteringen kan falla tillbaka på okrypterat** om SQLCipher eller Android Keystore
    inte kan användas på enheten – det är ett medvetet val för att appen aldrig ska bli
    oanvändbar, men det betyder att skyddet beror på enheten.
@@ -867,6 +885,19 @@ fel kan läsas utan att ladda ner loggen.
 10. **Inga tester mot riktiga sajter** (medvetet): testerna får aldrig kräva internet.
 11. **Språket är hårdkodat på svenska** i koden (`strings.xml` innehåller bara appnamnet).
 12. **Ålderskontrollen är en självbekräftelse**, inte en verifiering.
+
+### 16.1 Medvetet valt bort
+
+| Förslag | Varför inte |
+|---|---|
+| Bild-i-bild (PiP) | En flytande videoruta ovanpå hemskärmen avslöjar appen för vem som helst som tittar på telefonen – rakt emot idén med en räknare som fasad |
+| Nedladdning av klipp | Juridiskt riskabelt och tekniskt stort (HLS-segment ska sättas ihop); appen visar sajternas egna sidor i stället |
+| Bakgrundsjobb (`WorkManager`) som letar nya videor | Väcker nätverket, drar batteri och lämnar spår i bakgrunden – samma avslöjanderisk som PiP |
+| Root- och jailbreak-detektering | Går att kringgå på några sekunder, ger falska larm och skyddar inget som krypteringen inte redan skyddar |
+| Rotation av User-Agent | Ser mer ut som ett försök att kringgå sajternas skydd än som artighet; fast, ärlig UA plus tidsgränser och omförsök räcker |
+| Diskcache (TTL) av hämtade sidor och sökresultat | Skulle skriva sökningar och titlar i klartext på disken och underminera den krypterade databasen; hämtningar cachas i minnet och strömadresser i 20 minuter |
+| Automatisk tömning av urklipp | Appen kopierar själv inget till urklipp (verifierat: ingen `ClipboardManager`-kod finns), och att tömma urklippet skulle radera användarens egen text |
+| Uppdelning i moduler (`:core`, `:search`, …) | Byggtiden är redan ~4 minuter i CI; vinsten står inte i proportion till ombyggnaden i den här storleken |
 
 ---
 
@@ -887,6 +918,12 @@ fel kan läsas utan att ladda ner loggen.
 | Nätverk | Tidsgräns per sajt och fråga | 6 s (Wi-Fi) / 9 s (mobildata) |
 | Nätverk | Samtidiga sajter | 10 (Wi-Fi) / 4 (mobildata) |
 | Nätverk | Samtidiga inläsningar | 8 (Wi-Fi) / 3 (mobildata) / 1 (offline) |
+| Nätverk | Omförsök | 2 försök per hämtning, 450 ms paus, bara vid nätverksfel/429/5xx |
+| Nätverk | Batterisparläge | under 20 % utan laddare halveras antalet samtidiga anrop (minst 1) |
+| Säkerhet | Autolås | när appen lämnas (`background`), 1 min eller 5 min inaktivitet; kontrolleras var 5:e s |
+| Sajter | Avstängda sajter | sparas i `disabled_sites`, används inte i sökningar |
+| Historik | Positioner | sparas var 5:e sekund, krypterade |
+| CI | Tak för APK-storleken | 40 MB (annars misslyckas körningen) |
 | Säkerhet | Databasnyckel | 32 slumpade byte, AES/GCM i Keystore |
 | Skrapregler | Adress | `raw.githubusercontent.com/.../Calculator_69/main/scrape-rules.json` |
 | Skrapregler | Hämtintervall / tidsgräns / tak | 24 h / 8 s / 200 kB |
@@ -913,7 +950,7 @@ fel kan läsas utan att ladda ner loggen.
 ## 18. Utvecklingshistorik
 
 Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) innehåller
-22 commits (de två sista enbart dokumentation):
+25 commits:
 
 | Commit | Innehåll |
 |---|---|
@@ -937,11 +974,14 @@ Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) inneh�
 | `68ef59a` | Tre testfixar: slug-fallback i reservparsningen, nätverkstestet beskriver rätt beteende |
 | `0f47ec4` | **Fjärrkonfigurerbara skrapregler** (`scrape-rules.json`, validering, cache, inställningar) + `ScrapeRuleTest` |
 | `34c8f04` | **MockWebServer-tester** över TLS + injicerbar klient i `Fetch`/`MetadataExtractor` |
-| `c677a06`, `6f39e04` | Dokumentationen uppdaterad (kryptering, robusthet, fjärrregler, tester) |
+| `c677a06`, `6f39e04`, `7fe21b9` | Dokumentationen uppdaterad (kryptering, robusthet, fjärrregler, tester) |
+| `82dbbc1` | **Säkerhet**: krypterad sökhistorik och uppspelningshistorik (`CipherPayload`, `SecureValue`), autolås vid bakgrund och inaktivitet + `CipherPayloadTest` |
+| `612f66a` | **Stabilitet och UX**: omförsök med backoff i `Fetch`, batterisparläge, sajter som kan stängas av permanent, rättad "Fortsätt titta" (positionerna sammanfogas igen), Dependabot, APK-storlekskontroll, snapshot-test av rangordningen + `FetchRetryTest` |
 
-Senaste gröna CI-körning: **38409851452** (tester + APK, 21,7 MB). Efterföljande
-körningar verifierar robusthetsbatchen, krypteringen, fjärrreglerna och
-MockWebServer-testerna (`85b90ad` → `34c8f04`).
+Senaste gröna CI-körning: **38409851452** (tester + APK, 21,7 MB). Körningen för
+`82dbbc1` föll på att `PlaybackStore` hade tappat fyra funktioner (`savePlayed`, `recent`,
+`continueWatching`, `clear`) som `SearchViewModel` anropar – de återställdes i `612f66a`,
+som också ser till att positionerna sammanfogas med historiken igen.
 
 ---
 
