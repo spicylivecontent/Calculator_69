@@ -95,10 +95,10 @@ class ResultRankerTest {
 
     @Test
     fun scrapedTagsAndDescriptionRaiseRelevance() {
-        val plain = result("plain", "Något helt annat")
+        val plain = result("plain", "Ett annat klipp")
         val tagged = result(
             "tagged",
-            "Något helt annat",
+            "Ett helt annat klipp",
             tags = listOf("kitchen", "blonde"),
             description = "Hon lagar mat i köket innan det blir stökigt."
         )

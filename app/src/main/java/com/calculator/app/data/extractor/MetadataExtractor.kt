@@ -163,6 +163,15 @@ object MetadataExtractor {
         return null
     }
 
+    /** Som [selectText] men utan längdkrav – kvalitets- och tidsetiketter är ofta korta. */
+    private fun selectShortText(doc: Document, selectors: List<String>): String? {
+        for (selector in selectors) {
+            val text = doc.selectFirst(selector)?.text()?.trim()
+            if (!text.isNullOrEmpty()) return text
+        }
+        return null
+    }
+
     /** Nyckelord från länkar vars adress avslöjar vad de är (taggar, kategorier, modeller). */
     private fun keywordsMatching(doc: Document, hrefMatch: List<String>): List<String> {
         val found = mutableListOf<String>()
@@ -229,7 +238,7 @@ object MetadataExtractor {
         }
         val fromTitle = StreamSelection.qualityFromUrl(title.orEmpty())
         if (fromTitle != null) return fromTitle
-        val quality = selectText(doc, QUALITY_SELECTORS)
+        val quality = selectShortText(doc, QUALITY_SELECTORS)
         return StreamSelection.qualityFromUrl(quality.orEmpty())
     }
 
