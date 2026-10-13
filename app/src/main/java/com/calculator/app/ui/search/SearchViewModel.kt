@@ -15,6 +15,8 @@ import com.calculator.app.data.Repository
 import com.calculator.app.data.entity.SearchPresetEntity
 import com.calculator.app.data.entity.VideoEntity
 import com.calculator.app.data.extractor.MultiSiteSearcher
+import com.calculator.app.data.extractor.ScrapeRuleStore
+import com.calculator.app.data.extractor.ScrapeRules
 import com.calculator.app.data.extractor.ResolvedStream
 import com.calculator.app.data.extractor.SiteInfo
 import com.calculator.app.data.extractor.SiteSearchReport
@@ -72,11 +74,41 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     /** Läses av vid varje sökning – nätverksläget styr parallellitet och tidsgränser. */
     private var network: NetworkCondition = NetworkCondition.current(application)
 
-    private var searcher = MultiSiteSearcher(network = network)
+    private var searcher by mutableStateOf(MultiSiteSearcher(network = network))
     private val repository = Repository(application)
     private val planner = SearchPlanner()
     val preferences = AppPreferences(application)
     private val playbackStore = PlaybackStore(application)
+
+    /** Skrapregler: inbyggda, eller en nyare version hämtad från nätet. */
+    private val ruleStore = ScrapeRuleStore(application)
+    private var rules: ScrapeRules = ruleStore.current()
+
+    /** Status för skrapreglerna, visas i inställningarna. */
+    var rulesStatus by mutableStateOf(ruleStore.status())
+        private set
+
+    /** Kort besked efter en manuell uppdatering. */
+    var rulesMessage by mutableStateOf<String?>(null)
+        private set
+
+    init {
+        // Uppdaterade regler hämtas i bakgrunden (högst en gång i dygnet) och slår igenom
+        // först när de finns – en långsam hämtning får aldrig fördröja en sökning.
+        viewModelScope.launch {
+            val result = runCatching { ruleStore.refresh() }.getOrNull()
+            if (result is ScrapeRuleStore.RefreshResult.Updated) {
+                applyRules()
+                rulesMessage = "Skrapregler uppdaterade till v${result.version}"
+            }
+        }
+    }
+
+    private fun applyRules() {
+        rules = ruleStore.current()
+        searcher = MultiSiteSearcher(network = network, rules = rules)
+        rulesStatus = ruleStore.status()
+    }
 
     private val candidates = LinkedHashMap<String, SearchResult>()
     private var searchJob: Job? = null
@@ -119,7 +151,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var onlyPlayable by mutableStateOf(preferences.onlyPlayable)
         private set
 
-    val siteInfos: List<SiteInfo> = searcher.siteInfos
+    val siteInfos: List<SiteInfo> get() = searcher.siteInfos
     val categories = SearchTaxonomy.categories
 
     val searchHistory: List<String> get() = preferences.searchHistory()
@@ -292,6 +324,46 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
      * Panik/lås: tömmer allt känsligt ur minnet (träffar, frågor, taggar, historik i
      * cache) utan att röra det som användaren sparat i biblioteket.
      */
+    // ---------------------------------------------------------------------
+    // Skrapregler (inställningarna)
+    // ---------------------------------------------------------------------
+
+    val remoteRulesEnabled: Boolean get() = preferences.remoteRulesEnabled
+
+    fun onRemoteRulesEnabledChange(enabled: Boolean) {
+        preferences.remoteRulesEnabled = enabled
+        ruleStore.invalidate()
+        if (!enabled) ruleStore.reset()
+        applyRules()
+        rulesMessage = if (enabled) {
+            "Regler hämtas automatiskt, högst en gång i dygnet"
+        } else {
+            "Inbyggda regler används"
+        }
+    }
+
+    fun refreshRulesNow() {
+        viewModelScope.launch {
+            val result = runCatching { ruleStore.refresh(force = true) }.getOrNull()
+            rulesMessage = when (result) {
+                is ScrapeRuleStore.RefreshResult.Updated -> {
+                    applyRules()
+                    "Uppdaterade till v${result.version}: ${result.sites} sajter" +
+                        if (result.rejected > 0) " (${result.rejected} ogiltiga regler hoppades över)" else ""
+                }
+                ScrapeRuleStore.RefreshResult.Failed -> "Kunde inte hämta – de inbyggda reglerna används"
+                else -> "Ingen nyare version hittades"
+            }
+            rulesStatus = ruleStore.status()
+        }
+    }
+
+    fun resetRules() {
+        ruleStore.reset()
+        applyRules()
+        rulesMessage = "Tillbaka till de inbyggda reglerna"
+    }
+
     fun clearSensitiveState() {
         searchJob?.cancel()
         searchJob = null
@@ -396,7 +468,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     fun search() {
         if (isSearching || isLoadingMore) return
         network = NetworkCondition.current(getApplication())
-        searcher = MultiSiteSearcher(network = network)
+        searcher = MultiSiteSearcher(network = network, rules = rules)
 
         val plan = planner.plan(
             rawInput = query,

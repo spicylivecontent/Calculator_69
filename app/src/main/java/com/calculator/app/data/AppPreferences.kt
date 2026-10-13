@@ -50,6 +50,14 @@ class AppPreferences(context: Context) {
         get() = PreferredQuality.fromId(prefs.getString(KEY_QUALITY, PreferredQuality.AUTO.id))
         set(value) = prefs.edit().putString(KEY_QUALITY, value.id).apply()
 
+    /**
+     * Hämtar uppdaterade skrapregler från appens eget repo (högst en gång i dygnet).
+     * Endast data – adresser och mönster – aldrig kod.
+     */
+    var remoteRulesEnabled: Boolean
+        get() = prefs.getBoolean(KEY_REMOTE_RULES, true)
+        set(value) = prefs.edit().putBoolean(KEY_REMOTE_RULES, value).apply()
+
     /** Hur hårt WebView-spelaren blockerar annonser och omdirigeringar. */
     var adBlockLevel: AdBlockLevel
         get() = AdBlockLevel.fromId(prefs.getString(KEY_ADBLOCK, AdBlockLevel.STANDARD.id))
@@ -81,6 +89,7 @@ class AppPreferences(context: Context) {
         const val KEY_RESUME = "resume_playback"
         const val KEY_QUALITY = "preferred_quality"
         const val KEY_ADBLOCK = "adblock_level"
+        const val KEY_REMOTE_RULES = "remote_rules_enabled"
         const val KEY_HISTORY = "search_history"
         const val SEPARATOR = "\n"
         const val MAX_HISTORY = 12

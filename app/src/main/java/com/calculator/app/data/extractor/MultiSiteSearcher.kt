@@ -42,10 +42,24 @@ data class SearchOutcome(
 class MultiSiteSearcher(
     private val extractors: List<SiteExtractor> = defaultExtractors(),
     /** Nätverksläget styr hur många anrop som körs samtidigt och hur länge en sajt får ta. */
-    private val network: NetworkCondition = NetworkCondition.Default
+    private val network: NetworkCondition = NetworkCondition.Default,
+    /** Regler från nätet. Tomma regler betyder att allt är inbyggt. */
+    rules: ScrapeRules = ScrapeRules.Empty
 ) {
 
-    val siteInfos: List<SiteInfo> = extractors.map { SiteInfo(it.siteName, it.label) }
+    /**
+     * Sajterna som faktiskt används: en hämtad regel ersätter den inbyggda regeln för
+     * samma sajt, och regler för nya sajter läggs till i slutet av listan.
+     */
+    private val activeExtractors: List<SiteExtractor> = buildList {
+        extractors.forEach { builtIn ->
+            val rule = rules.forSite(builtIn.siteName)
+            add(if (rule != null) RuleSiteExtractor(rule) else builtIn)
+        }
+        addAll(rules.newSites(extractors.map { it.siteName }).map { RuleSiteExtractor(it) })
+    }
+
+    val siteInfos: List<SiteInfo> = activeExtractors.map { SiteInfo(it.siteName, it.label) }
 
     /** Sant när en sajt tog för lång tid och hoppades över. */
     private fun timeoutMessage(millis: Long): String = "Tog för lång tid (>${millis / 1000} s) – hoppades över"
@@ -69,7 +83,8 @@ class MultiSiteSearcher(
     ): SearchOutcome = coroutineScope {
         if (queries.isEmpty()) return@coroutineScope SearchOutcome(emptyList(), emptyList())
 
-        val selected = if (siteIds.isEmpty()) extractors else extractors.filter { it.siteName in siteIds }
+        val selected = if (siteIds.isEmpty()) activeExtractors
+        else activeExtractors.filter { it.siteName in siteIds }
         val siteSemaphore = Semaphore(network.siteParallelism.coerceAtLeast(1))
 
         val perSite = selected.map { extractor ->

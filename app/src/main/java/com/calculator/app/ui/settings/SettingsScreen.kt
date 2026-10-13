@@ -59,6 +59,12 @@ fun SettingsScreen(
     onLock: () -> Unit,
     onOpenChangePin: (String) -> Unit,
     onClearSearchHistory: () -> Unit,
+    rulesEnabled: Boolean = preferences.remoteRulesEnabled,
+    rulesStatus: String = "Inbyggda regler (10 sajter)",
+    rulesMessage: String? = null,
+    onRulesEnabledChange: (Boolean) -> Unit = {},
+    onRefreshRules: () -> Unit = {},
+    onResetRules: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var preferredQuality by remember { mutableStateOf(preferences.preferredQuality) }
@@ -230,6 +236,32 @@ fun SettingsScreen(
                     color = VaultTextSecondary,
                     fontSize = 12.sp
                 )
+            }
+        }
+
+        item { SectionHeader(title = "Skrapregler") }
+        item {
+            VaultToggleCard(
+                title = "Hämta uppdaterade regler",
+                subtitle = "Hämtar högst en gång i dygnet från appens eget repo. Bara adresser och mönster – aldrig kod.",
+                checked = rulesEnabled,
+                onCheckedChange = onRulesEnabledChange
+            )
+        }
+        item {
+            VaultSettingCard(title = "Regler i bruk", subtitle = rulesStatus) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TagChip(text = "Uppdatera nu", selected = false, onClick = onRefreshRules)
+                    TagChip(text = "Använd inbyggda", selected = false, onClick = onResetRules)
+                }
+                if (rulesMessage != null) {
+                    Text(
+                        rulesMessage,
+                        color = VaultTextSecondary,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
         }
 

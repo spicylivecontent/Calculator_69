@@ -288,7 +288,13 @@ private fun VaultContent(
                     onAdBlockLevelChange = { searchViewModel.onAdBlockLevelChange(it) },
                     onLock = lockEverything,
                     onOpenChangePin = { pinType -> pinToChange = pinType },
-                    onClearSearchHistory = { searchViewModel.clearSearchHistory() }
+                    onClearSearchHistory = { searchViewModel.clearSearchHistory() },
+                    rulesEnabled = searchViewModel.remoteRulesEnabled,
+                    rulesStatus = searchViewModel.rulesStatus.label(),
+                    rulesMessage = searchViewModel.rulesMessage,
+                    onRulesEnabledChange = { searchViewModel.onRemoteRulesEnabledChange(it) },
+                    onRefreshRules = { searchViewModel.refreshRulesNow() },
+                    onResetRules = { searchViewModel.resetRules() }
                 )
             }
         }

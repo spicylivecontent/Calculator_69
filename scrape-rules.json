@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-13",
+  "notes": [
+    "Skrapregler som appen kan hämta för att rätta en sajt utan att en ny APK behöver byggas.",
+    "Filen innehåller bara data: adresser, URL-mönster och CSS-selektorer. Aldrig kod, skript eller uttryck.",
+    "version måste höjas för varje ändring – appen ignorerar allt som inte är nyare än det den redan har.",
+    "En regel ersätter den inbyggda sajten med samma id, eller lägger till en ny sajt i slutet av listan.",
+    "Alla adresser måste vara https. searchUrl måste innehålla {query} och kan innehålla {page}.",
+    "Regler som inte validerar hoppas över, medan de övriga används som vanligt."
+  ],
+  "sites": {
+  }
+}
