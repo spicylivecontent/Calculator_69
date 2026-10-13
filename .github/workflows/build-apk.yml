@@ -36,7 +36,7 @@ jobs:
           set -o pipefail
           # assembleDebugAndroidTest kompilerar UI-testerna också, så att stavfel och
           # API-fel där upptäcks direkt i det snabba jobbet (emulatorjobbet kör dem sedan).
-          ./gradlew --no-daemon testDebugUnitTest assembleDebug assembleDebugAndroidTest --stacktrace --console=plain 2>&1 | tee gradle-build.log
+          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --stacktrace --console=plain 2>&1 | tee gradle-build.log
 
       - name: Report Gradle failure details
         if: failure() && steps.build_apk.outcome == 'failure'
@@ -96,4 +96,16 @@ jobs:
           name: Calculator-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Spara enhets- och lintresultat
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-and-lint-reports
+          path: |
+            app/build/reports/tests/**
+            app/build/test-results/**
+            app/build/reports/lint-results-debug.*
+          if-no-files-found: ignore
           retention-days: 14

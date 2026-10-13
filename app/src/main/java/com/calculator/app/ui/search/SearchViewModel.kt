@@ -589,6 +589,12 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     fun loadMore() {
         val plan = activePlan ?: return
         if (isSearching || isLoadingMore || isEnriching || !canLoadMore) return
+        val siteIds = effectiveSiteIds()
+        if (siteIds.isEmpty()) {
+            errorMessage = "Alla sajter är avstängda i inställningarna."
+            canLoadMore = false
+            return
+        }
         cancelSearch()
         val generation = searchGeneration
         isLoadingMore = true
@@ -598,7 +604,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 val nextPage = page + 1
                 val outcome = searcher.search(
                     queries = plan.queries,
-                    siteIds = effectiveSiteIds(),
+                    siteIds = siteIds,
                     startPage = nextPage,
                     pageCount = 1,
                     onBatch = { batch -> applyBatch(batch) }
