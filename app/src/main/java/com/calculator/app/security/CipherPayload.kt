@@ -43,6 +43,8 @@ internal object CipherPayload {
 
         val ivSize = combined[0].toInt()
         if (ivSize <= 0 || ivSize > MAX_IV_LENGTH) return null
+        // Ett värde utan chiffertext är trasigt (till exempel avbruten skrivning) och
+        // avvisas, så att det inte förväxlas med ett tomt men giltigt värde.
         if (combined.size <= 1 + ivSize) return null
 
         return combined.copyOfRange(1, 1 + ivSize) to combined.copyOfRange(1 + ivSize, combined.size)

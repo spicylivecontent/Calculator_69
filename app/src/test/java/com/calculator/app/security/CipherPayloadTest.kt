@@ -1,7 +1,6 @@
 package com.calculator.app.security
 
 import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -27,13 +26,17 @@ class CipherPayloadTest {
         assertArrayEquals(data, decoded.second)
     }
 
+    /**
+     * Ett värde med IV men utan chiffertext (till exempel en avbruten skrivning) ska
+     * avvisas i stället för att läsas som ett tomt värde. Testet nedan för trunkering
+     * kontrollerar samma sak från andra hållet.
+     */
     @Test
-    fun emptyDataIsStillValid() {
+    fun aValueWithoutCipherTextIsRejected() {
         val encoded = CipherPayload.encode(iv, ByteArray(0))
 
-        val decoded = CipherPayload.decode(encoded)
-        assertEquals(12, decoded!!.first.size)
-        assertEquals(0, decoded.second.size)
+        assertTrue("värdet ska fortfarande se krypterat ut", CipherPayload.isEncrypted(encoded))
+        assertNull("men det går inte att läsa tillbaka", CipherPayload.decode(encoded))
     }
 
     @Test
