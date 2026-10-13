@@ -234,8 +234,8 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 
 | Fil | Rader | Innehåll |
 |---|---|---|
-| `data/AppPreferences.kt` | 88 | Alla inställningar (sparas i `calculator_app_prefs`) |
-| `data/PlaybackStore.kt` | ~150 | Uppspelningshistorik och positioner (`calculator_playback`) |
+| `data/AppPreferences.kt` | 138 | Alla inställningar (`calculator_app_prefs`), inkl. autolås och avstängda sajter |
+| `data/PlaybackStore.kt` | 205 | Uppspelningshistorik och positioner, krypterade (`calculator_playback`) |
 | `data/AppDatabase.kt` | 83 | Room-databas (SQLCipher-krypterad), 6 tabeller, version 1, filval |
 | `data/VaultDatabasePlan.kt` | 43 | Ren logik: krypterad fil, migrering, fallback (testad) |
 | `data/LegacyVaultMigrator.kt` | 66 | Flyttar innehållet från den gamla okrypterade filen, en gång |
@@ -246,7 +246,10 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 | `network/AdBlockInterceptor.kt` | 26 | Kastar `IOException` för blockerade värdar |
 | `network/AdBlockHosts.kt` | 214 | Den delade domänlistan (148 domäner + 44 annonsvägar + 16 scheman) |
 | `network/PrivacyInterceptor.kt` | 62 | Tar bort trackingparametrar och identitetsheaders |
-| `network/NetworkCondition.kt` | 66 | Parallellitet och tidsgränser efter Wi-Fi / mobildata / offline |
+| `network/NetworkCondition.kt` | 111 | Parallellitet, tidsgränser och batterisparläge efter Wi-Fi / mobildata / offline |
+| `security/CipherPayload.kt` | 50 | Formatet för krypterade värden (ren logik, testad) |
+| `security/SecureValue.kt` | 22 | Läser och skriver känsliga inställningar krypterat |
+| `security/SqlCipherLoader.kt` | 24 | Laddar det inbyggda SQLCipher-biblioteket en gång, med fallback |
 | `CalculatorApp.kt` | 55 | Applikationsklass: Coil-cache med fasta gränser + migrering vid start |
 
 ---
