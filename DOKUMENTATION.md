@@ -61,7 +61,7 @@ stället – för situationer där någon annan tittar.
 |---|---|
 | Paketnamn | `com.calculator.app` |
 | Språk | 100 % Kotlin (Compose-UI), svenska texter hårdkodade i koden |
-| Kotlin-kod | 11 676 rader i 81 filer (`app/src/main`) + 1 969 rader tester i 16 filer |
+| Kotlin-kod | 12 804 rader i 87 filer (`app/src/main`) + 2 447 rader JVM-tester i 21 filer + 502 rader instrumenterade tester i 5 filer |
 | minSdk / targetSdk / compileSdk | 26 / 35 / 36 |
 | versionCode / versionName | 1 / 1.0 |
 | Byggsystem | Gradle 8.9 (wrapper) + AGP 8.7.3 + Kotlin 2.0.21 + KSP 2.0.21-1.0.25 |
@@ -71,9 +71,10 @@ stället – för situationer där någon annan tittar.
 | Nätverk | OkHttp 4.12.0 + Jsoup 1.18.1 |
 | Bilder | Coil 2.7.0 (crossfade) |
 | Övrigt | exp4j 0.4.8 (matte), androidx.biometric 1.1.0, coroutines 1.9.0 |
-| Enhetstester | **145 testfall i 18 filer** (körs på JVM, ingen enhet krävs) |
-| CI | GitHub Actions: `testDebugUnitTest assembleDebug` vid varje push |
-| APK (debug) | ca 21,7 MB, artifact **Calculator-debug-apk** |
+| JVM-enhetstester | **170 testfall i 21 filer** (körs utan Android-enhet) |
+| Instrumenterade tester | **17 testfall i 5 filer** (emulator eller Android-enhet krävs) |
+| CI | GitHub Actions: enhetstester, lint, APK och androidTest-kompilering vid push; emulatorregressioner på appkod |
+| APK (debug) | artifact **Calculator-debug-apk**; CI har ett tak på 40 MB |
 | Sajter | 10 stycken (se avsnitt 7) |
 | Kategorier / underkategorier | 12 / 106 |
 | Blockerade annonsdomäner | 148 unika (109 trackers + 51 popunder), 16 app-scheman, 44 annonsvägar |
@@ -168,7 +169,7 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 
 | Fil | Rader | Innehåll |
 |---|---|---|
-| `ui/vault/VaultScreen.kt` | 428 | Flikar, åldersbekräftelse, decoy, byte av koder, kopplar in spelarna |
+| `ui/vault/VaultScreen.kt` | 540 | Flikar, åldersbekräftelse, decoy, byte av koder, kopplar in spelarna |
 | `ui/theme/VaultTheme.kt` | 53 | Mörkt tema + palett (bakgrund, ytor, accent, gradienter) |
 | `ui/theme/Theme.kt`, `Type.kt`, `Color.kt` | 73 | Kalkylatorns eget Material 3-tema (dynamiska färger på Android 12+) |
 
@@ -177,8 +178,8 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 | Fil | Rader | Innehåll |
 |---|---|---|
 | `ui/home/HomeScreen.kt` | 249 | Startsida: progressrad, "Fortsätt titta", 8 snabbval, kategorikort, senaste träffar, låsknapp |
-| `ui/search/SearchScreen.kt` | 673 | Sökfält, filterrad, kategoripanel, avancerat sökfält, taggmoln, resultatlista, "ladda fler", spara sökning |
-| `ui/search/SearchViewModel.kt` | 943 | Hela sök- och uppspelningsflödet (se avsnitt 5), `clearSensitiveState()` |
+| `ui/search/SearchScreen.kt` | 676 | Sökfält, filterrad, kategoripanel, avancerat sökfält, taggmoln, resultatlista, "ladda fler", spara sökning |
+| `ui/search/SearchViewModel.kt` | 1 174 | Hela sök- och uppspelningsflödet (se avsnitt 5), `clearSensitiveState()` |
 | `ui/search/SearchViewModelFactory.kt` | 17 | Skapar ViewModel med Application |
 | `ui/library/LibraryScreen.kt` | 361 | Översikt + favoriter, watch later, historik, "never show again", sparade sökningar |
 | `ui/library/LibraryViewModel.kt` (+ Factory) | 75 | Flöden från Room + borttagningsmetoder |
@@ -189,14 +190,15 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 
 | Fil | Rader | Innehåll |
 |---|---|---|
-| `ui/web/WebPlayerScreen.kt` | 799 | WebView, annonsblock, popup-/omdirigeringsskydd, injektion, kontroller, kö, återupptagning |
-| `ui/web/WebAdBlock.kt` | 199 | Rena blockeringsregler (testade) + injicerad CSS/JS + nivåer |
+| `ui/web/WebPlayerScreen.kt` | 886 | WebView, annonsblock, popup-/omdirigeringsskydd, injektion, kontroller, kö, återupptagning |
+| `ui/web/WebPlayerHost.kt` | 94 | Visar HTML5-spelarens custom view i helskärm och återställer WebView:n säkert |
+| `ui/web/WebAdBlock.kt` | 189 | Rena blockeringsregler (testade) + injicerad CSS/JS + nivåer |
 
 **Inbyggd spelare (beta)**
 
 | Fil | Rader | Innehåll |
 |---|---|---|
-| `ui/player/VideoPlayerScreen.kt` | 1 156 | ExoPlayer, kvalitetsmeny, gester, skrubbning, hastighet, felpanel |
+| `ui/player/VideoPlayerScreen.kt` | 1 181 | ExoPlayer, kvalitetsmeny, gester, skrubbning, hastighet, felpanel |
 | `ui/player/PlayerQuality.kt` | 63 | Kvalitetsval, beskrivning, bitrate-tak |
 | `ui/player/PlayerSeekBar.kt` | 142 | Egen Canvas-tidslinje + tidsformatering |
 
@@ -204,21 +206,22 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 
 | Fil | Rader | Innehåll |
 |---|---|---|
-| `ai/SearchPlanner.kt` | ~330 | Gör om fritext + kategorier till flera sökfrågor, negativa filter, synonymer |
+| `ai/SearchPlanner.kt` | 405 | Gör om fritext + kategorier till flera sökfrågor, negativa filter, synonymer |
 | `ai/AgeSafety.kt` | 45 | Blocklista för termer som kan avse minderåriga + svensk feltext |
 | `data/taxonomy/SearchTaxonomy.kt` | 259 | 12 kategorier, 106 underkategorier, uppslag |
-| `data/extractor/SiteExtractor.kt` | 66 | Interface + `BaseSiteExtractor` (sök-URL, strukturell parsning, reservparsning, `responds`) |
-| `data/extractor/ScrapeRule.kt` | 163 | Regler från nätet: modell, validering och tolkning (testad) |
-| `data/extractor/RuleSiteExtractor.kt` | 36 | Sajt som styrs helt av en hämtad regel |
+| `data/extractor/SiteExtractor.kt` | 74 | Interface + `BaseSiteExtractor` (sök-URL, strukturell parsning, reservparsning, `responds`) |
+| `data/extractor/SiteUrlPolicy.kt` | 20 | HTTPS-hostkontroll för sajtens träfflänkar, regler och WebView-navigering |
+| `data/extractor/ScrapeRule.kt` | 167 | Regler från nätet: modell, validering och tolkning (testad) |
+| `data/extractor/RuleSiteExtractor.kt` | 38 | Sajt som styrs helt av en hämtad regel |
 | `data/extractor/ScrapeRuleStore.kt` | 170 | Hämtning (max en gång i dygnet), cache och status för reglerna |
 | `data/extractor/*Extractor.kt` (10 st) | 17–23 vardera | Sajtspecifik URL och listningskonfig |
-| `data/extractor/ExtractorSupport.kt` | 300 | Listningsparsning, reservparsning, titelstädning, tumnagel/längd/kvalitet |
-| `data/extractor/MultiSiteSearcher.kt` | 220 | Parallell sökning + inläsning i vågor, semafor och tidsgräns per sajt |
-| `data/extractor/MetadataExtractor.kt` | 350 | Läser ut all information från en detaljsida |
+| `data/extractor/ExtractorSupport.kt` | 310 | Listningsparsning, reservparsning, titelstädning, tumnagel/längd/kvalitet |
+| `data/extractor/MultiSiteSearcher.kt` | 235 | Parallell sökning + inläsning i vågor, semafor och tidsgräns per sajt |
+| `data/extractor/MetadataExtractor.kt` | 351 | Läser ut all information från en detaljsida |
 | `data/extractor/MiniJson.kt` | 199 | Liten JSON-tolkare för `application/ld+json` |
-| `data/extractor/Fetch.kt` | 55 | Gemensam HTTPS-hämtning (12 s, max 6 MB), klienten kan bytas i tester |
+| `data/extractor/Fetch.kt` | 225 | Gemensam cancellable HTTPS-hämtning (12 s, max 6 MB), omförsök, källsajtvaliderade redirects och injicerbar testklient |
 | `data/extractor/StreamSelection.kt` | 260 | Url-normalisering, medietyper, HLS-varianter, kvalitetsgissning, `looksRemoved` |
-| `data/extractor/StreamResolver.kt` | 237 | Extrahering av mediaström (används av beta-spelaren), `clearCache()` |
+| `data/extractor/StreamResolver.kt` | 241 | Extrahering och probe av mediaström (används av beta-spelaren), `clearCache()` |
 
 **Modeller och logik**
 
@@ -235,9 +238,10 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 | Fil | Rader | Innehåll |
 |---|---|---|
 | `data/AppPreferences.kt` | 138 | Alla inställningar (`calculator_app_prefs`), inkl. autolås och avstängda sajter |
-| `data/PlaybackStore.kt` | 205 | Uppspelningshistorik och positioner, krypterade (`calculator_playback`) |
-| `data/AppDatabase.kt` | 83 | Room-databas (SQLCipher-krypterad), 6 tabeller, version 1, filval |
-| `data/VaultDatabasePlan.kt` | 43 | Ren logik: krypterad fil, migrering, fallback (testad) |
+| `data/PlaybackStore.kt` | 231 | Uppspelningshistorik och positioner, krypterade (`calculator_playback`) |
+| `data/PlaybackResumePolicy.kt` | 14 | Respekterar resume-växeln vid återupptagning och ny uppspelning (testad) |
+| `data/AppDatabase.kt` | 80 | Room-databas (SQLCipher-krypterad), 6 tabeller, version 1, filval |
+| `data/VaultDatabasePlan.kt` | 38 | Ren logik: krypterat mål, legacy-migrering och fail-closed vid saknad kryptering (testad) |
 | `data/LegacyVaultMigrator.kt` | 66 | Flyttar innehållet från den gamla okrypterade filen, en gång |
 | `data/Repository.kt` | 46 | Tunn wrapper över DAO:erna |
 | `data/dao/*.kt` (6 st) | 10–28 vardera | Video, favorit, watch later, dislike-regel, sökpreset, inställning |
@@ -249,7 +253,7 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 | `network/NetworkCondition.kt` | 111 | Parallellitet, tidsgränser och batterisparläge efter Wi-Fi / mobildata / offline |
 | `security/CipherPayload.kt` | 50 | Formatet för krypterade värden (ren logik, testad) |
 | `security/SecureValue.kt` | 22 | Läser och skriver känsliga inställningar krypterat |
-| `security/SqlCipherLoader.kt` | 24 | Laddar det inbyggda SQLCipher-biblioteket en gång, med fallback |
+| `security/SqlCipherLoader.kt` | 24 | Laddar det inbyggda SQLCipher-biblioteket en gång; misslyckad laddning stänger databasen |
 | `CalculatorApp.kt` | 55 | Applikationsklass: Coil-cache med fasta gränser + migrering vid start |
 
 ---
@@ -578,7 +582,7 @@ Fil: `ui/web/WebPlayerScreen.kt` + `ui/web/WebAdBlock.kt`.
 | DOM storage | på | Sajternas spelare använder det |
 | `mediaPlaybackRequiresUserGesture` | av | Videon ska kunna starta direkt |
 | `javaScriptCanOpenWindowsAutomatically` | av | Popups |
-| `setSupportMultipleWindows` | av | Popups |
+| `setSupportMultipleWindows` | på; `onCreateWindow` nekar nya fönster | Popup-förfrågningar hanteras centralt och blockeras |
 | Tredjepartscookies | av | Integritet |
 | `mixedContentMode` | `MIXED_CONTENT_NEVER_ALLOW` | Ingen klartext |
 | `allowFileAccess` / `allowContentAccess` | av | Sandbox |
@@ -590,6 +594,7 @@ Fil: `ui/web/WebPlayerScreen.kt` + `ui/web/WebAdBlock.kt`.
 ### 10.2 Vad spelaren gör
 
 - **Laddar** `detailUrl` och visar en tunn progressbar högst upp.
+- **Helskärm.** `WebChromeClient.onShowCustomView` monterar videons helskärmsvy i `WebPlayerHost`; WebView:n döljs tills `onHideCustomView`. Appens överlagrade knappar tas bort så webbspelarens kontroller får touch, och Bakåt avslutar helskärmen först.
 - **Blockerar** resurser till annonsdomäner (`shouldInterceptRequest`) och räknar dem.
 - **Stoppar** navigering: popups (`onCreateWindow`), annonslänkar, länkar till andra
   sajter och app-scheman (`intent://`, `market://`, `tg://`, …). Klartext (http) nekas.
@@ -744,7 +749,7 @@ flera) som bara används av migreringen.
 | Fil | Nycklar | Innehåll |
 |---|---|---|
 | `calculator_app_prefs` | `only_playable` (true), `skip_seconds` (10, 5–60), `keep_screen_on` (true), `gesture_seeking` (true), `resume_playback` (true), `preferred_quality` (`auto`), `adblock_level` (`standard`), `remote_rules_enabled` (true), `auto_lock` (`background`), `disabled_sites`, `search_history` | Alla inställningar + sökhistorik (max 12, radseparerad, **krypterad**) |
-| `calculator_playback` | `recent_entries` (JSON, max 40), `positions` (JSON-karta) | Uppspelningshistorik och positioner per video, **båda krypterade** |
+| `calculator_playback` | `recent_entries` (JSON, max 40), `positions` (JSON-karta, endast id:n i historiken) | Uppspelningshistorik och positioner per video, **båda krypterade** |
 | `calculator_content_access` | `adult_content_confirmed` | Åldersbekräftelsen |
 | `calculator_vault_secret` | `db_passphrase` | Databasens nyckel, krypterad (se 13.3) |
 | `calculator_scrape_rules` | `rules_json`, `rules_version`, `rules_fetched_at` | Hämtade skrapregler + när de hämtades |
@@ -753,8 +758,9 @@ flera) som bara används av migreringen.
 inom 30 sekunder från slutet. Historiken kan rensas från biblioteket. Positionerna sparas
 var femte sekund i den egna kartan `positions` (`video-id` → `[position, längd]`), och
 kartan sammanfogas med historiken när den läses – annars skulle "Fortsätt titta" stå still
-på noll. `positions` ligger krypterad, och de gamla nycklarna `pos_<id>`/`dur_<id>` flyttas
-in i kartan en gång och raderas därefter.
+på noll. Positioner rensas när motsvarande video faller ur den senaste historiken, så även
+kartans storlek är begränsad till högst 40 id:n. `positions` ligger krypterad, och de gamla
+nycklarna `pos_<id>`/`dur_<id>` flyttas in i kartan en gång och raderas därefter.
 
 ### 13.3 Kryptering
 
@@ -776,9 +782,14 @@ biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
   videor, favoriter, titta senare, regler och sparade sökningar läses in, skrivs till den
   krypterade databasen och **först därefter** raderas originalet (inklusive `-wal`,
   `-shm`, `-journal`). Misslyckas något lämnas originalet kvar.
-* **Fallback**: kan SQLCipher eller Keystore inte användas (till exempel en enhet där det
-  inbyggda biblioteket saknas) fortsätter appen med den gamla okrypterade filen i stället
-  för att krascha eller visa ett tomt bibliotek.
+* **Fail closed**: kan SQLCipher eller Keystore inte användas (till exempel om det
+  inbyggda biblioteket saknas) öppnas ingen vaultdatabas. Vaultens lagringskontroll visar
+  ett fel, och en eventuell gammal klartextfil lämnas orörd för att migreringen ska kunna
+  försökas igen när krypteringen fungerar. Den används aldrig som fallback.
+* **PIN-återställning**: om PIN-nycklar finns men inte kan dekrypteras visas inte
+  nykonfiguration; vaulten förblir låst så att korrupt eller otillgängligt nyckelmaterial
+  inte kan skrivas över av misstag. Återställning kräver att appdata rensas, vilket även
+  tar bort det lokala innehållet.
 * **Sökhistorik, uppspelningshistorik och positioner** ligger sedan `82dbbc1` också
   krypterade, värde för värde, med samma Keystore-nyckel. Formatet är
   `enc:` + Base64(`[IV-längd][IV][chiffertext]`) och sköts av `security/CipherPayload.kt`
@@ -824,38 +835,51 @@ biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
 
 ## 15. Kvalitetssäkring: tester och CI
 
-### 15.1 Enhetstester (145 testfall, JVM)
+### 15.1 Enhetstester (JVM)
 
 | Fil | Testar |
 |---|---|
 | `ai/AgeSafetyTest.kt` | Blocklistan i båda språken, hela ord, att vanliga ord inte fastnar, blockerade planer |
-| `ai/SearchPlannerTest.kt` | Huvudsökning, varianter, negativa filter, svenska → engelska, citat, kategorier, tak på frågor, förklaringstext |
+| `ai/SearchPlannerTest.kt` | Huvudsökning, varianter, negativa filter, svenska → engelska, citat, kategorier, frågetak (även noll), förklaringstext |
 | `data/taxonomy/SearchTaxonomyTest.kt` | Unika id:n, etiketter, gemena engelska termer, uppslag, inga blockerade ålderstermer |
-| `data/extractor/ExtractorSupportTest.kt` | Listningsparsning, titelstädning, slug-fallback, kvalitet, HTTPS-krav |
+| `data/extractor/ExtractorSupportTest.kt` | Listningsparsning, titelstädning, slug-fallback, kvalitet, HTTPS- och källsajtkrav för detaljlänkar |
 | `data/extractor/GenericListingTest.kt` | Reservparsning: videolänkar utan klassnamn, filtrering av tagg-/kategorilänkar, dedup, HTTPS |
 | `data/extractor/SiteConfigTest.kt` | Alla tio sajter: unika id:n, HTTPS-sök-URL med orden kvar, att mönstret matchar sajtens egna länkar, konsekvent konfiguration |
-| `data/extractor/ScrapeRuleTest.kt` | Fjärrregler: tolkning, HTTPS-krav, `{query}`, trasig regex, versionskrav, tak för selektorer/limit, nya sajter, namnvalidering |
+| `data/extractor/SiteUrlPolicyTest.kt` | Källsajtens HTTPS-hostkontroll, subdomäner, lookalike-värdar, portar och inloggningsuppgifter |
+| `data/extractor/ScrapeRuleTest.kt` | Fjärrregler: tolkning, HTTPS- och källvärdskrav, `{query}`, trasig regex, versionskrav, tak för selektorer/limit, nya sajter, namnvalidering |
 | `data/extractor/FetchRetryTest.kt` | Omförsökspolicyn: nätverksfel och 5xx/429 görs om, 404/403 och klartext aldrig, antalet försök respekteras |
 | `security/CipherPayloadTest.kt` | Formatet för krypterade värden: in- och utpackning, tomma värden, klartext, trasiga och trunkerade värden |
-| `data/extractor/PipelineMockWebServerTest.kt` | Hela kedjan mot en lokal HTTPS-server (MockWebServer): lista → träffar, detaljsida → metadata, borttagen sida, serverfel, omförsök vid tillfälligt fel, att en 404 inte görs om, omdirigering, iso-8859-1, att klartext aldrig hämtas |
+| `data/extractor/PipelineMockWebServerTest.kt` | Hela kedjan mot en lokal HTTPS-server (MockWebServer): lista → träffar, detaljsida → metadata, borttagen sida, serverfel, omförsök vid tillfälligt fel, att en 404 inte görs om, avbrytning av pågående anrop, säker omdirigering (extern värd nekas), iso-8859-1, att klartext aldrig hämtas |
 | `data/extractor/MetadataExtractorTest.kt` | Rubrik, beskrivning, taggar, medverkande, kategorier, kvalitet, längd (inkl. ISO 8601), borttagna sidor, nyckelordstak, täckning |
 | `data/extractor/MiniJsonTest.kt` | JSON-parsning, escapes/unicode, trasig indata, nästlad sökning, listor |
 | `data/extractor/StreamSelectionTest.kt` | HTTPS-krav, medietyper, rangordning, HLS-varianter, borttagna sidor, innehållstyper |
 | `data/model/DurationParserTest.kt` | Kolon- och ordformat, ogiltig indata, formatering |
-| `data/VaultDatabasePlanTest.kt` | Filval: migrering körs exakt en gång, ingen dubbelimport, fallback när kryptering saknas |
+| `data/VaultDatabasePlanTest.kt` | Filval: den krypterade databasen är enda mål, legacyfilen är migrationskälla och krypteringsfel stänger vaulten |
+| `data/PlaybackResumePolicyTest.kt` | Resume-växeln gäller för sparade positioner, återöppnad historik och ny uppspelning |
 | `network/NetworkConditionTest.kt` | Parallellitet och tidsgränser för Wi-Fi, mobildata, offline och okänt läge, batterisparlägets halvering |
 | `data/model/ResultRankerTest.kt` | Relevans (rubrik/taggar/beskrivning), täckning, dubbletter, sortering, taggfilter, taggmoln, skrapad sökning, snapshot av rangordningen |
-| `ui/web/WebAdBlockTest.kt` | Blockerade domäner/vägar, navigeringsbeslut, samma-sajt-logik (inkl. `co.uk`), injektionsscript, JS-escape |
+| `ui/web/WebAdBlockTest.kt` | Blockerade domäner/vägar, navigeringsbeslut, samma-sajt-logik (inkl. `co.uk`), att Av-nivån fortfarande spärrar extern navigation, injektionsscript, JS-escape |
 
 Kör dem med `./gradlew testDebugUnitTest`. Testerna kräver inget internet: den enda som
 talar med en server gör det mot en lokal MockWebServer med eget certifikat.
 
-### 15.2 CI
+### 15.2 Instrumenterade regressionstester (17 testfall)
 
-Varje push kör workflowen: JDK 17 → Android SDK 36 → `testDebugUnitTest` +
-`assembleDebug` → artifact. Vid fel skrivs Kotlin-fel och misslyckade tester dels som
-**annotations** på körningen, dels i jobbets **summary** (med testresultat-XML) – så att
-fel kan läsas utan att ladda ner loggen.
+`CalculatorUiTest` täcker kalkylatorn och PIN-flödet, `LibraryUiTest` bibliotekets UI,
+`PinStoreRegressionTest` att korrupta sparade PIN-koder inte öppnar nykonfiguration eller
+skrivs över, och `VaultRegressionTest` bland annat migrering, Keystore-kopior, rensning
+samt positioner som rensas när videohistoriken kapas. `WebPlayerHostTest` verifierar att
+HTML5-helskärmsvyn ersätter WebView:n och att hostens hide-åtgärd återställer sidan samt
+notifierar Chromium (åtgärden som Bakåt-hanteraren anropar). Körs med
+`./gradlew connectedDebugAndroidTest` på emulator eller ansluten enhet.
+
+### 15.3 CI
+
+Snabbworkflowen kör JDK 17 → Android SDK 36 → `testDebugUnitTest`, `lintDebug`,
+`assembleDebug` och `assembleDebugAndroidTest` (så kompileras även instrumenterade tester)
+→ APK artifact. En separat emulatorworkflow kör `connectedDebugAndroidTest` på API 34 när
+appkod ändras. Vid byggfel skrivs Kotlin-fel och misslyckade tester dels som
+**annotations** på körningen, dels i jobbets **summary** (med testresultat-XML).
 
 ---
 
@@ -878,13 +902,14 @@ fel kan läsas utan att ladda ner loggen.
    sökhistorik, uppspelningshistorik och positioner (AES/GCM per värde) är skyddade.
    Kvar i klartext ligger ofarliga inställningar som spolintervall, kvalitet och växlar.
    Databasen har version 1 och därmed ingen schemamigrering ännu.
-7. **Krypteringen kan falla tillbaka på okrypterat** om SQLCipher eller Android Keystore
-   inte kan användas på enheten – det är ett medvetet val för att appen aldrig ska bli
-   oanvändbar, men det betyder att skyddet beror på enheten.
+7. **Krypteringen faller aldrig tillbaka på okrypterat.** Om SQLCipher eller Android
+   Keystore inte kan användas visas ett lagringsfel och vaultdatabasen öppnas inte.
+   Eventuell äldre klartextdata lämnas orörd tills en krypterad migrering kan göras.
 8. **Fjärrreglerna pekar på repots `main`-branch**, så mekanismen är aktiv först när
    `scrape-rules.json` finns där. Byter filen adress måste `ScrapeRuleStore.RULES_URL` byggas om.
-9. **Inga instrumenterade UI-tester** – testerna täcker logiken och nätverkskedjan mot en
-   lokal server, inte skärmarna.
+9. **UI-testningen är riktad, inte en full sajt-till-video-end-to-end-körning.** Det finns
+   emulatorregressioner för kalkylator/PIN, bibliotek, lagrings-/migreringsflöden och
+   WebPlayerHost, men inga tester som är beroende av riktiga videosajter eller nätinnehåll.
 10. **Inga tester mot riktiga sajter** (medvetet): testerna får aldrig kräva internet.
 11. **Språket är hårdkodat på svenska** i koden (`strings.xml` innehåller bara appnamnet).
 12. **Ålderskontrollen är en självbekräftelse**, inte en verifiering.
@@ -952,8 +977,10 @@ fel kan läsas utan att ladda ner loggen.
 
 ## 18. Utvecklingshistorik
 
-Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) innehåller
-25 commits:
+Den ursprungliga featuregrenen `arena/a0d9d445-calculator-69` utgick från `main` @
+`03ccd07` och hade 34 commits. PR #4 (39 commits) förde in den och de efterföljande
+review-fixarna i `main`; PR #3 stängdes som ersatt. Tabellen är ett urval av viktiga
+milstolpar, inte en fullständig lista över varje commit.
 
 | Commit | Innehåll |
 |---|---|
@@ -980,15 +1007,16 @@ Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) inneh�
 | `c677a06`, `6f39e04`, `7fe21b9` | Dokumentationen uppdaterad (kryptering, robusthet, fjärrregler, tester) |
 | `82dbbc1` | **Säkerhet**: krypterad sökhistorik och uppspelningshistorik (`CipherPayload`, `SecureValue`), autolås vid bakgrund och inaktivitet + `CipherPayloadTest` |
 | `612f66a` | **Stabilitet och UX**: omförsök med backoff i `Fetch`, batterisparläge, sajter som kan stängas av permanent, rättad "Fortsätt titta" (positionerna sammanfogas igen), Dependabot, APK-storlekskontroll, snapshot-test av rangordningen + `FetchRetryTest` |
+| `76b597e`, `9b68218` | Reviewfixar för vaultens livscykel, avbrytning av sökning, legacy-migrering, fail-closed-lagring, PIN-material och återupptagning |
+| `6de9a7a`, `b89b0e2`, `d36964d`, `6e89b77` | Lintfixar, WebView-navigeringsregressioner, spelargester/sökning/ljusstyrka och Media3 opt-in |
+| `650fc10` | Merge av PR #4 till `main` |
+| `fb47444`, `5a8c27b` | PR #5: källsajtbegränsade sökomdirigeringar, detaljlänkar, HTML5-helscreen-host, bounded resume-data och regressionsfixar |
 
-Senaste gröna CI-körning: **38441282284** (`9993853`, 145 testfall + APK, 24,7 MB). Två
-körningar före den var röda: `82dbbc1` föll på att `PlaybackStore` hade tappat fyra
-funktioner (`savePlayed`, `recent`, `continueWatching`, `clear`) som `SearchViewModel`
-anropar – de återställdes i `612f66a`, som också ser till att positionerna sammanfogas med
-historiken igen. Därefter föll ett enhetstest: `CipherPayloadTest` påstod att ett värde med
-IV men utan chiffertext gick att läsa tillbaka, samtidigt som trunkeringsprovet krävde
-motsatsen. Kontraktet är nu det strängare (en avbruten skrivning avvisas), och testet
-beskriver det (`9993853`).
+Grön verifiering av appkoden: snabbworkflow **38463103371** (JVM-tester, lint, APK och
+kompilering av instrumenterade tester) samt emulatorworkflow **38463103444** (17
+instrumenterade regressioner). Dokumentationsuppdateringen `7425c85` verifierades separat
+i snabbworkflow **38463910618**. Den första appkodskörningen (`38462442461`) fångade ett
+Kotlin-kompileringsfel i testets OkHttp DNS-resolver; det rättades i `5a8c27b`.
 
 ---
 
@@ -1023,6 +1051,6 @@ beskriver det (`9993853`).
 
 ---
 
-*Dokumentet beskriver appen vid commit `6f39e04` på branchen
-`arena/a0d9d445-calculator-69` (20 kodcommits efter `4065589`, 22 totalt sedan `03ccd07`).
-Ändras koden ändras detaljerna – kör testerna och bygg APK via CI för att verifiera.*
+*Dokumentet är den aktuella tekniska översikten och uppdateras tillsammans med koden.
+Ändras koden ändras detaljerna; verifiera JVM- och emulatorregressionerna samt byggresultatet
+i GitHub Actions innan en release.*

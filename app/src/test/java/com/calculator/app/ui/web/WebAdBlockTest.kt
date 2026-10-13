@@ -33,11 +33,15 @@ class WebAdBlockTest {
     }
 
     @Test
-    fun offLevelDisablesEverything() {
+    fun offLevelDisablesAdFilteringButKeepsNavigationGuard() {
         assertFalse(WebAdBlock.isBlockedRequest("https://exoclick.com/ads.js", AdBlockLevel.OFF))
         assertEquals(
-            NavigationDecision.ALLOW,
+            NavigationDecision.EXTERNAL,
             WebAdBlock.navigationFor(site, "https://another-site.example/watch", AdBlockLevel.OFF)
+        )
+        assertEquals(
+            NavigationDecision.ALLOW,
+            WebAdBlock.navigationFor(site, "https://another-site.example/movie.mp4", AdBlockLevel.OFF)
         )
     }
 

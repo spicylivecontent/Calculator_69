@@ -40,6 +40,7 @@ Workflowen **Build APK** körs automatiskt vid push till valfri branch och kan o
 - **Blockerade domäner.** Samma lista över annons-, popunder- och trackingnätverk som används vid all annan hämtning (OkHttp) används också av WebView: begärda resurser till dessa domäner avbryts innan de lämnar enheten, och antalet blockerade förfrågningar visas i spelaren.
 - **Popups och omdirigeringar.** Nya fönster blockeras helt (`window.open` neutraliseras och `onCreateWindow` nekar), länkar till andra sajter och app-scheman (`intent://`, `market://` …) stoppas, och klartext (http) tillåts aldrig.
 - **Städning på sidan.** En injicerad regeluppsättning gömmer och tar bort annonsytor, popunder-element och annons-iframes, tar bort `target="_blank"` och ser till att filmens `<video>`-element får kontroller.
+- **Helskärm för video.** Sajternas HTML5-helskärmsläge visas ovanpå WebView:n; appens egna kontroller döljs medan sajten spelar i helskärm, och Bakåt stänger helskärmsläget före sid-/spelarnavigering.
 - **Tre nivåer.** Standard (rekommenderad), Strikt (blockerar allt externt) och Av. Nivån väljs i spelarens meny eller i Inställningar.
 - **Samtycke och cookies.** Tredjepartscookies är avstängda, geolokalisering av och behörighetsförfrågningar nekas.
 - **Samma kontroller som förut.** Knappar och dubbeltryck för att spola framåt/bakåt (5/10/15/30 s), pausa, nästa/föregående video i kön, tidslinje med position, samt återupptagning där du slutade (positionen skickas till filmens `<video>`-element).

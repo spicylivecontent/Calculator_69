@@ -26,21 +26,30 @@ class PinStore(context: Context) {
 
     fun getDecoyPin(): String? = readPin(DECOY_PIN_KEY)
 
-    fun savePins(realPin: String, decoyPin: String): Boolean = runCatching {
-        val encryptedRealPin = encrypt(realPin)
-        val encryptedDecoyPin = encrypt(decoyPin)
-        preferences.edit()
-            .putString(REAL_PIN_KEY, encryptedRealPin)
-            .putString(DECOY_PIN_KEY, encryptedDecoyPin)
-            .commit()
-    }.getOrDefault(false)
+    /** True if either PIN slot exists, including unreadable or partially written data. */
+    fun hasStoredPinMaterial(): Boolean =
+        preferences.contains(REAL_PIN_KEY) || preferences.contains(DECOY_PIN_KEY)
+
+    /** Initial setup only: never replace unreadable stored PINs with fresh credentials. */
+    @Synchronized
+    fun savePins(realPin: String, decoyPin: String): Boolean {
+        if (hasStoredPinMaterial()) return false
+        return runCatching {
+            val encryptedRealPin = encrypt(realPin)
+            val encryptedDecoyPin = encrypt(decoyPin)
+            preferences.edit()
+                .putString(REAL_PIN_KEY, encryptedRealPin)
+                .putString(DECOY_PIN_KEY, encryptedDecoyPin)
+                .commit()
+        }.getOrDefault(false)
+    }
 
     fun saveRealPin(pin: String): Boolean = savePin(REAL_PIN_KEY, pin)
 
     fun saveDecoyPin(pin: String): Boolean = savePin(DECOY_PIN_KEY, pin)
 
     private fun readPin(key: String): String? {
-        val encrypted = preferences.getString(key, null) ?: return null
+        val encrypted = runCatching { preferences.getString(key, null) }.getOrNull() ?: return null
         return runCatching { decrypt(encrypted) }.getOrNull()
     }
 

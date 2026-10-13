@@ -75,9 +75,8 @@ object WebAdBlock {
         val currentHost = currentUrl?.toHttpUrlOrNull()?.host.orEmpty().lowercase(Locale.ROOT)
         val targetHost = parsedTarget.host.lowercase(Locale.ROOT)
 
-        // Annonsvärdar och typiska popunder-vägar stoppas oavsett var de ligger.
+        // Disabling ad filtering must not disable the independent off-site navigation guard.
         if (level != AdBlockLevel.OFF && isBlockedRequest(target, level)) return NavigationDecision.BLOCK
-        if (level == AdBlockLevel.OFF) return NavigationDecision.ALLOW
 
         return when {
             sameSite(currentHost, targetHost) -> NavigationDecision.ALLOW

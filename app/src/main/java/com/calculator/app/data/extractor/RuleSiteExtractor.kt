@@ -11,6 +11,8 @@ internal class RuleSiteExtractor(private val rule: ScrapeRule) : SiteExtractor {
 
     override val siteName: String = rule.siteName
 
+    override val baseUrl: String = rule.baseUrl
+
     override val supportsPagination: Boolean get() = rule.supportsPagination
 
     override suspend fun search(query: String, page: Int): List<SearchResult> {

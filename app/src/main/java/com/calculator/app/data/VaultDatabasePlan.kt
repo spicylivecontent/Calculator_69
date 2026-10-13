@@ -1,43 +1,38 @@
 package com.calculator.app.data
 
 /**
- * Bestämmer vilken databasfil appen ska använda.
+ * Chooses the encrypted vault database and whether a legacy plaintext file must be
+ * migrated into it. Encryption is mandatory: the app must fail closed rather than
+ * silently reopen the old plaintext database when SQLCipher or Keystore is unavailable.
  *
- * Krypterad databas får ett eget filnamn (`calculator_vault_enc.db`) medan den gamla
- * okrypterade filen behåller sitt namn. Det gör att en uppgradering kan läsa in det
- * gamla innehållet, skriva det till den krypterade filen och därefter ta bort originalet –
- * och om krypteringen av någon anledning inte kan aktiveras fortsätter appen med den
- * gamla filen i stället för att tappa allt.
- *
- * Logiken är medvetet fri från Android-beroenden så att den kan enhetstestas.
+ * Kept free of Android dependencies so the file-selection policy can be unit-tested.
  */
 internal object VaultDatabasePlan {
 
-    /** Krypterad databas (SQLCipher). */
+    /** Encrypted database (SQLCipher). */
     const val ENCRYPTED_NAME = "calculator_vault_enc.db"
 
-    /** Äldre, okrypterad databas. */
+    /** Legacy, unencrypted database. It is only ever opened as a migration source. */
     const val PLAIN_NAME = "calculator_vault.db"
 
     data class Layout(
-        val encrypted: Boolean,
         val databaseName: String,
-        /** Fil att flytta innehåll ifrån, eller null när ingen migrering behövs. */
+        /** File to migrate from, or null when no migration is needed. */
         val migrateFrom: String?
     )
 
     /**
-     * [encryptionAvailable] är false när SQLCipher-biblioteket eller Keystore inte kan
-     * användas. En kvarvarande klartextfil måste kontrolleras även om målfilen finns: en
-     * tidigare flytt kan ha avbrutits. Migreringen har en transaktionell markör.
+     * Refuses to select any database when encryption is unavailable. If a legacy file
+     * remains, it is kept untouched until an encrypted migration can be completed.
      */
     fun layout(
         encryptionAvailable: Boolean,
-        encryptedExists: Boolean,
         plainExists: Boolean
-    ): Layout = when {
-        !encryptionAvailable -> Layout(encrypted = false, databaseName = PLAIN_NAME, migrateFrom = null)
-        plainExists -> Layout(true, ENCRYPTED_NAME, PLAIN_NAME)
-        else -> Layout(encrypted = true, databaseName = ENCRYPTED_NAME, migrateFrom = null)
+    ): Layout {
+        check(encryptionAvailable) { "Vault encryption unavailable; refusing plaintext database" }
+        return Layout(
+            databaseName = ENCRYPTED_NAME,
+            migrateFrom = PLAIN_NAME.takeIf { plainExists }
+        )
     }
 }

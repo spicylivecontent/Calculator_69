@@ -89,7 +89,7 @@ object StreamResolver {
     /** Löser ut bästa kandidat utan att göra en extra probe (probe görs ändå i [resolvePlayable]). */
     suspend fun resolve(detailUrl: String, sourceSite: String): ResolvedStream? = withContext(Dispatchers.IO) {
         try {
-            val html = fetchDetail(detailUrl, sourceSite) ?: return@withContext null
+            val html = fetchDetail(detailUrl) ?: return@withContext null
             val candidates = LinkedHashSet<String>()
             candidates.addAll(StreamSelection.extractCandidates(html, detailUrl))
             candidates.addAll(siteSpecificCandidates(sourceSite, detailUrl))
@@ -107,22 +107,22 @@ object StreamResolver {
         }
     }
 
-    private fun siteSpecificCandidates(sourceSite: String, detailUrl: String): List<String> {
+    private suspend fun siteSpecificCandidates(sourceSite: String, detailUrl: String): List<String> {
         if (sourceSite.lowercase() != "beeg") return emptyList()
         val id = detailUrl.trimEnd('/').substringAfterLast('/').substringBefore('?')
         if (id.isBlank() || !id.all { it.isDigit() }) return emptyList()
-        val json = Fetch.pageBlocking("https://api.beeg.com/api/v6/video/$id?v=2", timeoutMs = DETAIL_TIMEOUT_MS)
+        val json = Fetch.page("https://api.beeg.com/api/v6/video/$id?v=2", timeoutMs = DETAIL_TIMEOUT_MS)
             ?: return emptyList()
         return StreamSelection.extractCandidates(json, detailUrl)
     }
 
-    private fun fetchDetail(detailUrl: String, sourceSite: String): String? {
-        val html = Fetch.pageBlocking(detailUrl, timeoutMs = DETAIL_TIMEOUT_MS) ?: return null
+    private suspend fun fetchDetail(detailUrl: String): String? {
+        val html = Fetch.page(detailUrl, timeoutMs = DETAIL_TIMEOUT_MS) ?: return null
         if (StreamSelection.looksRemoved(html)) return null
         return html
     }
 
-    private fun inspect(url: String, referer: String?): ResolvedStream? {
+    private suspend fun inspect(url: String, referer: String?): ResolvedStream? {
         val probe = probe(url, referer) ?: return null
         return if (probe.isHls) {
             val manifest = fetchManifest(url, referer) ?: return null
@@ -152,7 +152,11 @@ object StreamResolver {
 
     private data class ProbeResult(val isHls: Boolean, val contentType: String?)
 
-    private fun probe(url: String, referer: String?): ProbeResult? {
+    private suspend fun probe(
+        url: String,
+        referer: String?,
+        timeoutMs: Long = PROBE_TIMEOUT_MS
+    ): ProbeResult? {
         val parsed = url.toHttpUrlOrNull() ?: return null
         if (!parsed.isHttps) return null
 
@@ -163,41 +167,37 @@ object StreamResolver {
         applyMediaHeaders(builder, referer)
 
         val call = NetworkClient.client.newCall(builder.build())
-        call.timeout().timeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        return try {
-            call.execute().use { response ->
-                if (!response.isSuccessful) return null
-                val contentType = response.body?.contentType()?.toString()
-                val isHls = StreamSelection.isHls(url) ||
-                    contentType?.contains("mpegurl", ignoreCase = true) == true
-                if (!StreamSelection.isPlayableContentType(contentType, url)) return null
-                ProbeResult(isHls = isHls, contentType = contentType)
-            }
-        } catch (_: Exception) {
-            null
+        call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
+        return Fetch.awaitResponse(call, fallback = { null as ProbeResult? }) { response ->
+            if (!response.isSuccessful) return@awaitResponse null
+            val contentType = response.body?.contentType()?.toString()
+            val isHls = StreamSelection.isHls(url) ||
+                contentType?.contains("mpegurl", ignoreCase = true) == true
+            if (!StreamSelection.isPlayableContentType(contentType, url)) return@awaitResponse null
+            ProbeResult(isHls = isHls, contentType = contentType)
         }
     }
 
-    private fun fetchManifest(url: String, referer: String?): String? {
+    private suspend fun fetchManifest(
+        url: String,
+        referer: String?,
+        timeoutMs: Long = PROBE_TIMEOUT_MS
+    ): String? {
         val parsed = url.toHttpUrlOrNull() ?: return null
         if (!parsed.isHttps) return null
         val builder = Request.Builder().url(parsed).get()
         applyMediaHeaders(builder, referer)
         val call = NetworkClient.client.newCall(builder.build())
-        call.timeout().timeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        return try {
-            call.execute().use { response ->
-                if (!response.isSuccessful) return null
-                val body = response.body ?: return null
-                val length = body.contentLength()
-                if (length > MAX_HLS_BYTES) return null
-                val source = body.source()
-                source.request(MAX_HLS_BYTES.toLong() + 1)
-                if (source.buffer.size > MAX_HLS_BYTES) return null
-                source.readString(body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8)
-            }
-        } catch (_: Exception) {
-            null
+        call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
+        return Fetch.awaitResponse(call, fallback = { null as String? }) { response ->
+            if (!response.isSuccessful) return@awaitResponse null
+            val body = response.body ?: return@awaitResponse null
+            val length = body.contentLength()
+            if (length > MAX_HLS_BYTES) return@awaitResponse null
+            val source = body.source()
+            source.request(MAX_HLS_BYTES.toLong() + 1)
+            if (source.buffer.size > MAX_HLS_BYTES) return@awaitResponse null
+            source.readString(body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8)
         }
     }
 
@@ -209,10 +209,10 @@ object StreamResolver {
     ): Boolean = withContext(Dispatchers.IO) {
         if (streamUrl.isBlank()) return@withContext false
         try {
-            val probe = probe(streamUrl, refererUrl)
+            val probe = probe(streamUrl, refererUrl, timeoutMillis)
             if (probe == null) return@withContext false
             if (!probe.isHls) return@withContext true
-            val manifest = fetchManifest(streamUrl, refererUrl)
+            val manifest = fetchManifest(streamUrl, refererUrl, timeoutMillis)
             StreamSelection.looksLikeHlsPlaylist(manifest)
         } catch (cancelled: CancellationException) {
             throw cancelled

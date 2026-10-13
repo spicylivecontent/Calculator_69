@@ -29,7 +29,7 @@ data class ScrapeRule(
         val url = searchUrlTemplate
             .replace(QUERY_PLACEHOLDER, Fetch.urlEncode(trimmed))
             .replace(PAGE_PLACEHOLDER, page.coerceAtLeast(1).toString())
-        return url.takeIf { it.startsWith("https://") }
+        return url.takeIf { SiteUrlPolicy.isSameSiteHttps(it, baseUrl) }
     }
 
     /** Gör om regeln till samma konfiguration som de inbyggda sajterna använder. */
@@ -69,6 +69,10 @@ data class ScrapeRule(
             if (!template.startsWith("https://")) return null
             if (!template.contains(QUERY_PLACEHOLDER)) return null
             if (template.length > MAX_TEMPLATE_LENGTH) return null
+            val probeUrl = template
+                .replace(QUERY_PLACEHOLDER, "query")
+                .replace(PAGE_PLACEHOLDER, "1")
+            if (!SiteUrlPolicy.isSameSiteHttps(probeUrl, baseUrl)) return null
 
             val patternText = MiniJson.string(raw["hrefPattern"])
             val pattern = if (patternText.isNullOrBlank()) {

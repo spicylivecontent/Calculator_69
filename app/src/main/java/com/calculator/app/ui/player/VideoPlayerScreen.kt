@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -146,6 +147,7 @@ fun VideoPlayerScreen(
     onPlaybackError: (String?) -> Unit = {}
 ) {
     if (videoUrl.isBlank()) {
+        BackHandler(onBack = onBack)
         Box(
             modifier = Modifier.fillMaxSize().background(Color.Black),
             contentAlignment = Alignment.Center
@@ -195,7 +197,7 @@ fun VideoPlayerScreen(
         DefaultRenderersFactory(context).setEnableDecoderFallback(true)
     }
 
-    val exoPlayer = remember(context, videoUrl, refererUrl, trackSelector, loadControl, renderersFactory) {
+    val exoPlayer = remember(context, videoUrl, videoId, refererUrl, trackSelector, loadControl, renderersFactory) {
         val headers = buildMap {
             val parsed = refererUrl?.trim()?.takeIf { it.startsWith("https://", ignoreCase = true) }
             if (parsed != null) {
@@ -251,7 +253,7 @@ fun VideoPlayerScreen(
     var feedback by remember(exoPlayer) { mutableStateOf<OverlayFeedback?>(null) }
     var hud by remember(exoPlayer) { mutableStateOf<String?>(null) }
     var resumeNotice by remember(exoPlayer) { mutableStateOf<Long?>(null) }
-    var appliedStart by remember(exoPlayer) { mutableStateOf(false) }
+    var appliedStart by remember(exoPlayer, startPositionMs) { mutableStateOf(false) }
 
     fun seekTo(targetMs: Long) {
         if (durationMs <= 0L) return
@@ -312,6 +314,9 @@ fun VideoPlayerScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    // Keep system Back inside the player; otherwise the calculator's vault-lock handler wins.
+    BackHandler(onBack = onBack)
 
     LaunchedEffect(exoPlayer) {
         var tick = 0
@@ -532,6 +537,7 @@ fun VideoPlayerScreen(
                                 onDragCancel = {
                                     isScrubbing = false
                                     exoPlayer.setSeekParameters(SeekParameters.DEFAULT)
+                                    seekTo(scrubStartMs)
                                 }
                             )
                         }

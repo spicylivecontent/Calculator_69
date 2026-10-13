@@ -53,10 +53,16 @@ class PlaybackStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun position(videoId: String): Long = readPositions()[videoId]?.first ?: 0L
+    fun position(videoId: String): Long =
+        readAll().firstOrNull { it.id == videoId }?.positionMs ?: 0L
 
     fun saveProgress(videoId: String, positionMs: Long, durationMs: Long) {
-        val positions = readPositions().toMutableMap()
+        val retainedIds = readAll().mapTo(mutableSetOf()) { it.id }
+        if (videoId !in retainedIds) return
+
+        val positions = readPositions()
+            .filterKeys { it in retainedIds }
+            .toMutableMap()
         positions[videoId] = positionMs.coerceAtLeast(0L) to durationMs.coerceAtLeast(0L)
         writePositions(positions)
     }
@@ -70,7 +76,7 @@ class PlaybackStore(context: Context) {
             buildMap {
                 for (id in json.keys()) {
                     val entry = json.optJSONArray(id) ?: continue
-                    put(id, entry.optLong(0) to entry.optLong(1))
+                    put(id, entry.optLong(0).coerceAtLeast(0L) to entry.optLong(1).coerceAtLeast(0L))
                 }
             }
         } catch (_: Exception) {
@@ -78,12 +84,16 @@ class PlaybackStore(context: Context) {
         }
     }
 
-    private fun writePositions(positions: Map<String, Pair<Long, Long>>) {
+    private fun encodePositions(positions: Map<String, Pair<Long, Long>>): String? {
         val json = JSONObject()
         for ((id, value) in positions) {
             json.put(id, JSONArray().put(value.first).put(value.second))
         }
-        val encrypted = SecureValue.write(json.toString()) ?: return
+        return SecureValue.write(json.toString())
+    }
+
+    private fun writePositions(positions: Map<String, Pair<Long, Long>>) {
+        val encrypted = encodePositions(positions) ?: return
         prefs.edit().putString(KEY_POSITIONS, encrypted).apply()
     }
 
@@ -182,6 +192,9 @@ class PlaybackStore(context: Context) {
     }
 
     private fun writeAll(entries: List<RecentPlayback>) {
+        val retainedIds = entries.mapTo(mutableSetOf()) { it.id }
+        val boundedPositions = readPositions().filterKeys { it in retainedIds }
+
         val array = JSONArray()
         for (entry in entries) {
             array.put(
@@ -197,8 +210,12 @@ class PlaybackStore(context: Context) {
                     .put("at", entry.updatedAt)
             )
         }
-        val encrypted = SecureValue.write(array.toString()) ?: return
-        prefs.edit().putString(KEY_ENTRIES, encrypted).apply()
+        val encryptedEntries = SecureValue.write(array.toString()) ?: return
+        val encryptedPositions = encodePositions(boundedPositions) ?: return
+        prefs.edit()
+            .putString(KEY_ENTRIES, encryptedEntries)
+            .putString(KEY_POSITIONS, encryptedPositions)
+            .apply()
     }
 
     private companion object {

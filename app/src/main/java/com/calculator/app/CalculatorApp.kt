@@ -28,7 +28,8 @@ class CalculatorApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         // Engångsflytt av gammalt innehåll till den krypterade databasen. Misslyckas den
-        // lämnas originalfilen kvar och appen fortsätter som vanligt.
+        // lämnas originalfilen kvar; vaultens lagringskontroll visar ett fel i stället
+        // för att öppna en okrypterad databas.
         if (getDatabasePath("calculator_vault.db").exists()) applicationScope.launch {
             runCatching { AppDatabase.migrateLegacyIfNeeded(applicationContext) }
         }

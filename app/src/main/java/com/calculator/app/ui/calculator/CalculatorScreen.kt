@@ -54,6 +54,11 @@ fun CalculatorScreen(
         }
     }
 
+    if (viewModel.pinStorageError) {
+        PinStorageErrorScreen()
+        return
+    }
+
     if (!viewModel.isPinConfigured) {
         PinSetupScreen(onSavePins = viewModel::configurePins)
         return
@@ -68,6 +73,36 @@ fun CalculatorScreen(
         )
         VaultMode.DECOY -> VaultScreen(isDecoy = true, onLock = { viewModel.lockVault() })
         VaultMode.NONE -> CalculatorUI(viewModel = viewModel)
+    }
+}
+
+@Composable
+private fun PinStorageErrorScreen() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364))))
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "Åtkomstkoderna kan inte läsas",
+            color = Color.White,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Vaulten förblir låst eftersom sparade koder inte kunde dekrypteras. Appen ersätter inte " +
+                "befintliga koder med nya och öppnar inte en okrypterad vault. Om du återställer appdata " +
+                "förloras även sparat innehåll.",
+            color = Color(0xFFB0BEC5),
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center
+        )
     }
 }
 

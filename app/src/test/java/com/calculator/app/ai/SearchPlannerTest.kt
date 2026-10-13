@@ -116,6 +116,15 @@ class SearchPlannerTest {
     }
 
     @Test
+    fun zeroMaximumQueriesDoesNotLeakThePrimaryQuery() {
+        val plan = planner.plan("blonde kitchen", maxQueries = 0)
+
+        assertTrue(plan.queries.isEmpty())
+        assertTrue(plan.terms.isEmpty())
+        assertTrue(plan.explanation.contains("maxQueries"))
+    }
+
+    @Test
     fun termsContainEverythingSearchedFor() {
         val plan = planner.plan("blonde kitchen", categoryTerms = listOf("outdoor"))
 

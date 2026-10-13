@@ -1,47 +1,28 @@
 package com.calculator.app.data
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Databasens filval är säkerhetskritiskt: väljer appen fel fil tappar användaren sitt
- * bibliotek, och kör migreringen två gånger blir allt dubbelt. Här vaktas hela tabellen.
- */
+/** The vault must never silently choose an unencrypted database. */
 class VaultDatabasePlanTest {
 
     @Test
     fun encryptedDatabaseIsUsedWhenEncryptionWorks() {
         val layout = VaultDatabasePlan.layout(
             encryptionAvailable = true,
-            encryptedExists = false,
             plainExists = false
         )
 
-        assertTrue("appen ska använda den krypterade filen", layout.encrypted)
         assertEquals(VaultDatabasePlan.ENCRYPTED_NAME, layout.databaseName)
-        assertNull("inget att flytta första gången", layout.migrateFrom)
+        assertNull("nothing to migrate on first use", layout.migrateFrom)
     }
 
     @Test
-    fun oldUnencryptedDatabaseIsMigratedOnce() {
+    fun oldUnencryptedDatabaseIsOnlySelectedAsMigrationSource() {
         val layout = VaultDatabasePlan.layout(
             encryptionAvailable = true,
-            encryptedExists = false,
-            plainExists = true
-        )
-
-        assertEquals(VaultDatabasePlan.ENCRYPTED_NAME, layout.databaseName)
-        assertEquals("gamla filen ska flyttas in", VaultDatabasePlan.PLAIN_NAME, layout.migrateFrom)
-    }
-
-    @Test
-    fun interruptedMigrationIsRetriedWhenTheSourceStillExists() {
-        val layout = VaultDatabasePlan.layout(
-            encryptionAvailable = true,
-            encryptedExists = true,
             plainExists = true
         )
 
@@ -50,39 +31,34 @@ class VaultDatabasePlanTest {
     }
 
     @Test
-    fun plainDatabaseIsKeptWhenEncryptionIsUnavailable() {
+    fun interruptedMigrationIsRetriedWhileThePlainSourceExists() {
+        // The encrypted target may already exist; the old file remains a migration source
+        // until the transaction marker is committed and the source can be deleted.
         val layout = VaultDatabasePlan.layout(
-            encryptionAvailable = false,
-            encryptedExists = false,
+            encryptionAvailable = true,
             plainExists = true
         )
 
-        assertFalse(layout.encrypted)
-        assertEquals("appen får inte bli oanvändbar", VaultDatabasePlan.PLAIN_NAME, layout.databaseName)
-        assertNull(layout.migrateFrom)
+        assertEquals(VaultDatabasePlan.ENCRYPTED_NAME, layout.databaseName)
+        assertEquals(VaultDatabasePlan.PLAIN_NAME, layout.migrateFrom)
     }
 
     @Test
-    fun encryptionUnavailableNeverPointsAtTheEncryptedFile() {
-        // Kan SQLCipher inte laddas går den krypterade filen inte att öppna alls – då är
-        // den gamla filen enda möjliga valet, även om en krypterad fil ligger kvar.
-        val layout = VaultDatabasePlan.layout(
-            encryptionAvailable = false,
-            encryptedExists = true,
-            plainExists = false
-        )
+    fun unavailableEncryptionFailsClosedAndDoesNotSelectPlaintext() {
+        val error = runCatching {
+            VaultDatabasePlan.layout(
+                encryptionAvailable = false,
+                plainExists = true
+            )
+        }.exceptionOrNull()
 
-        assertFalse(layout.encrypted)
-        assertEquals(VaultDatabasePlan.PLAIN_NAME, layout.databaseName)
-        assertNull(layout.migrateFrom)
+        assertTrue(error is IllegalStateException)
+        assertTrue(error?.message.orEmpty().contains("refusing plaintext"))
     }
 
     @Test
     fun databaseNamesStayDistinct() {
-        assertTrue(
-            "filnamnen måste skilja sig, annars kan migreringen skriva över originalet",
-            VaultDatabasePlan.ENCRYPTED_NAME != VaultDatabasePlan.PLAIN_NAME
-        )
+        assertTrue(VaultDatabasePlan.ENCRYPTED_NAME != VaultDatabasePlan.PLAIN_NAME)
         assertTrue(VaultDatabasePlan.ENCRYPTED_NAME.endsWith(".db"))
         assertTrue(VaultDatabasePlan.PLAIN_NAME.endsWith(".db"))
     }

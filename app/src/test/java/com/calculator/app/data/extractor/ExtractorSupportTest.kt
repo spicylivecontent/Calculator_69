@@ -27,6 +27,9 @@ class ExtractorSupportTest {
             <a href="http://insecure.example.com/video/def456">Ignored because of http</a>
           </div>
           <div class="item">
+            <a href="https://attacker.example/video/evil789">Off-site HTTPS detail link</a>
+          </div>
+          <div class="item">
             <a href="/video/abc123">
               <img src="https://cdn.example.com/t/abc123-hd.jpg">
             </a>
@@ -82,6 +85,23 @@ class ExtractorSupportTest {
         assertEquals("1080p", ExtractorSupport.qualityFromTitle("Blonde kitchen 1080p"))
         assertEquals("4K", ExtractorSupport.qualityFromTitle("Amateur 4K clip"))
         assertNull(ExtractorSupport.qualityFromTitle("Blonde kitchen"))
+    }
+
+    @Test
+    fun genericListingsRejectOffSiteDetailLinks() {
+        val html = """
+            <a href="https://attacker.example/video/blonde-in-kitchen-123">Bad host</a>
+            <a href="https://www.mysite.example/video/blonde-in-kitchen-456">Trusted subdomain</a>
+        """.trimIndent()
+
+        val results = ExtractorSupport.parseListingsGeneric(
+            html = html,
+            baseUrl = "https://mysite.example",
+            siteName = "mysite"
+        )
+
+        assertEquals(1, results.size)
+        assertEquals("https://www.mysite.example/video/blonde-in-kitchen-456", results.single().detailUrl)
     }
 
     @Test

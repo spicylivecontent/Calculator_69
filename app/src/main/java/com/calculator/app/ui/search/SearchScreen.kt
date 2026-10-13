@@ -133,12 +133,12 @@ fun SearchScreen(
                     onClick = {
                         viewModel.search()
                     },
-                    enabled = !viewModel.isSearching,
+                    enabled = !viewModel.isSearching && !viewModel.isLoadingMore,
                     colors = ButtonDefaults.buttonColors(containerColor = VaultAccent),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.height(56.dp)
                 ) {
-                    if (viewModel.isSearching) {
+                    if (viewModel.isSearching || viewModel.isLoadingMore) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.Black, strokeWidth = 2.dp)
                     } else {
                         Text("Sök", color = Color.Black, fontWeight = FontWeight.Bold)
@@ -554,7 +554,7 @@ fun SearchScreen(
                     item {
                         Button(
                             onClick = { viewModel.loadMore() },
-                            enabled = !viewModel.isLoadingMore,
+                            enabled = !viewModel.isLoadingMore && !viewModel.isSearching && !viewModel.isEnriching,
                             colors = ButtonDefaults.buttonColors(containerColor = VaultSurfaceHigh),
                             shape = RoundedCornerShape(14.dp),
                             modifier = Modifier.fillMaxWidth().height(48.dp)

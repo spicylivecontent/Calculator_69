@@ -19,8 +19,13 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
     private val pinStore = PinStore(application)
     private var realPin: String? = pinStore.getRealPin()
     private var decoyPin: String? = pinStore.getDecoyPin()
+    private val storedPinsAreValid = areValidPins(realPin, decoyPin)
 
-    var isPinConfigured by mutableStateOf(realPin != null && decoyPin != null)
+    var isPinConfigured by mutableStateOf(storedPinsAreValid)
+        private set
+
+    /** Existing but unreadable credentials must never be treated as a fresh install. */
+    var pinStorageError by mutableStateOf(pinStore.hasStoredPinMaterial() && !storedPinsAreValid)
         private set
 
     var input by mutableStateOf("")
@@ -42,6 +47,7 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
     private var justCalculated = false
 
     fun configurePins(newRealPin: String, newDecoyPin: String): Boolean {
+        if (pinStorageError || pinStore.hasStoredPinMaterial()) return false
         if (!isValidPin(newRealPin) || !isValidPin(newDecoyPin) || newRealPin == newDecoyPin) {
             return false
         }
@@ -54,7 +60,9 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun updateRealPin(newPin: String): Boolean {
-        if (!isValidPin(newPin) || newPin == decoyPin || !pinStore.saveRealPin(newPin)) {
+        if (!isPinConfigured || pinStorageError || !isValidPin(newPin) ||
+            newPin == decoyPin || !pinStore.saveRealPin(newPin)
+        ) {
             return false
         }
         realPin = newPin
@@ -62,7 +70,9 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun updateDecoyPin(newPin: String): Boolean {
-        if (!isValidPin(newPin) || newPin == realPin || !pinStore.saveDecoyPin(newPin)) {
+        if (!isPinConfigured || pinStorageError || !isValidPin(newPin) ||
+            newPin == realPin || !pinStore.saveDecoyPin(newPin)
+        ) {
             return false
         }
         decoyPin = newPin
@@ -187,6 +197,9 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun isValidPin(pin: String): Boolean =
         pin.length in MIN_PIN_LENGTH..MAX_PIN_LENGTH && pin.all { it in '0'..'9' }
+
+    private fun areValidPins(real: String?, decoy: String?): Boolean =
+        real != null && decoy != null && real != decoy && isValidPin(real) && isValidPin(decoy)
 
     private companion object {
         const val ERROR_RESULT = "Error"

@@ -6,6 +6,9 @@ import kotlinx.coroutines.CancellationException
 interface SiteExtractor {
     val siteName: String
 
+    /** Base URL used to validate extracted detail-page URLs. */
+    val baseUrl: String? get() = null
+
     /** Visningsnamn i gränssnittet. */
     val label: String get() = SearchResult.prettySiteName(siteName)
 
@@ -22,6 +25,8 @@ interface SiteExtractor {
 abstract class BaseSiteExtractor : SiteExtractor {
 
     protected abstract val listing: ListingConfig
+
+    final override val baseUrl: String get() = listing.baseUrl
 
     protected abstract fun searchUrl(query: String, page: Int): String
 

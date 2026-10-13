@@ -16,7 +16,7 @@ import com.calculator.app.network.NetworkCondition
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Information om en sajt som används i gränssnittet. */
-data class SiteInfo(val id: String, val label: String)
+data class SiteInfo(val id: String, val label: String, val baseUrl: String? = null)
 
 /** Hur det gick för en sajt i en sökning. */
 data class SiteSearchReport(
@@ -59,7 +59,7 @@ class MultiSiteSearcher(
         addAll(rules.newSites(extractors.map { it.siteName }).map { RuleSiteExtractor(it) })
     }
 
-    val siteInfos: List<SiteInfo> = activeExtractors.map { SiteInfo(it.siteName, it.label) }
+    val siteInfos: List<SiteInfo> = activeExtractors.map { SiteInfo(it.siteName, it.label, it.baseUrl) }
 
     /** Sant när en sajt tog för lång tid och hoppades över. */
     private fun timeoutMessage(millis: Long): String = "Tog för lång tid (>${millis / 1000} s) – hoppades över"
