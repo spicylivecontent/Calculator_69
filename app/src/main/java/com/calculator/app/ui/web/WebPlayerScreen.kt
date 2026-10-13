@@ -732,7 +732,7 @@ private fun WebBottomBar(
 private fun emptyResponse(): WebResourceResponse =
     WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
 
-private data class PlayerState(
+internal data class PlayerState(
     val position: Double,
     val duration: Double,
     val paused: Boolean,
@@ -741,7 +741,7 @@ private data class PlayerState(
 )
 
 /** Tolkar svaret från `window.__pcState()` (kan vara en JSON-sträng inkapslad i en sträng). */
-fun parsePlayerState(raw: String?): PlayerState? {
+internal fun parsePlayerState(raw: String?): PlayerState? {
     val decoded = decodeJsString(raw) ?: return null
     val map = MiniJson.parse(decoded) as? Map<*, *> ?: return null
     val position = (map["t"] as? Number)?.toDouble() ?: return null
