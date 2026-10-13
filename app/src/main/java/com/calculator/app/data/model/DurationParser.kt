@@ -1,7 +1,6 @@
 package com.calculator.app.data.model
 
 import java.util.Locale
-import kotlin.math.roundToInt
 
 /**
  * Gör om textlängder från sajterna ("12:34", "1:02:03", "12 min", "1h 5min") till sekunder
@@ -20,25 +19,28 @@ object DurationParser {
         if (text.isEmpty()) return null
 
         if (text.contains(':')) {
-            val parts = text.split(':').map { it.trim() }.filter { it.isNotEmpty() }
-            if (parts.isEmpty() || parts.size > 3) return null
-            if (parts.any { part -> part.isNotEmpty() && !part.all { it.isDigit() } }) return null
-            val numbers = parts.map { it.toDoubleOrNull() }
-            if (numbers.any { it == null }) return null
-            var total = 0.0
-            for (value in numbers) total = total * 60.0 + (value ?: 0.0)
-            return total.roundToInt().takeIf { it > 0 }
+            val parts = text.split(':').map { it.trim() }
+            if (parts.size !in 2..3 || parts.any { it.isEmpty() || !it.all { c -> c in '0'..'9' } }) return null
+            val numbers = parts.map { it.toLongOrNull() ?: return null }
+            if (numbers.drop(1).any { it !in 0..59 }) return null
+            var total = 0L
+            for (value in numbers) {
+                if (value > Int.MAX_VALUE || total > Int.MAX_VALUE / 60L) return null
+                total = total * 60L + value
+            }
+            return total.takeIf { it in 1..Int.MAX_VALUE.toLong() }?.toInt()
         }
 
-        var totalSeconds = 0
+        var totalSeconds = 0L
         var found = false
         for ((pattern, multiplier) in wordPatterns) {
             val match = pattern.find(text) ?: continue
-            val value = match.groupValues.getOrNull(1)?.toIntOrNull() ?: continue
+            val value = match.groupValues.getOrNull(1)?.toLongOrNull() ?: return null
+            if (value > Int.MAX_VALUE / multiplier.toLong()) return null
             totalSeconds += value * multiplier
             found = true
         }
-        if (found) return totalSeconds.takeIf { it > 0 }
+        if (found) return totalSeconds.takeIf { it in 1..Int.MAX_VALUE.toLong() }?.toInt()
 
         // Rena tal utan enhet är tvetydiga – hoppa över hellre än att gissa fel.
         return null

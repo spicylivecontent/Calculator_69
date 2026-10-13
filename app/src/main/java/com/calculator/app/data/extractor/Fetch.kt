@@ -96,7 +96,10 @@ object Fetch {
                 if (!response.isSuccessful) return Attempt.HttpError(response.code)
                 val body = response.body ?: return Attempt.NetworkError
                 if (body.contentLength() > MAX_BODY_CHARS) return Attempt.Rejected
-                Attempt.Body(body.string().take(MAX_BODY_CHARS))
+                val source = body.source()
+                source.request(MAX_BODY_CHARS.toLong() + 1)
+                if (source.buffer.size > MAX_BODY_CHARS) return Attempt.Rejected
+                Attempt.Body(source.readString(body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8))
             }
         } catch (cancelled: CancellationException) {
             throw cancelled

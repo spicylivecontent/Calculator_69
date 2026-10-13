@@ -19,6 +19,14 @@ object NetworkClient {
             .followSslRedirects(true)
             .addInterceptor(AdBlockInterceptor())
             .addInterceptor(PrivacyInterceptor())
+            .addNetworkInterceptor { chain ->
+                val url = chain.request().url
+                // Network interceptors also see redirect hops.
+                if (!url.isHttps || AdBlockHosts.isBlocked(url.host)) {
+                    throw java.io.IOException("Unsafe or blocked request")
+                }
+                chain.proceed(chain.request())
+            }
             .build()
     }
 }

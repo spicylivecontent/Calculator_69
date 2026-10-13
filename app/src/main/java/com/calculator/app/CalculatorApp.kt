@@ -29,7 +29,7 @@ class CalculatorApp : Application(), ImageLoaderFactory {
         super.onCreate()
         // Engångsflytt av gammalt innehåll till den krypterade databasen. Misslyckas den
         // lämnas originalfilen kvar och appen fortsätter som vanligt.
-        applicationScope.launch {
+        if (getDatabasePath("calculator_vault.db").exists()) applicationScope.launch {
             runCatching { AppDatabase.migrateLegacyIfNeeded(applicationContext) }
         }
     }
@@ -48,6 +48,7 @@ class CalculatorApp : Application(), ImageLoaderFactory {
                     .maxSizeBytes(64L * 1024 * 1024)
                     .build()
             }
+            .okHttpClient(com.calculator.app.network.NetworkClient.client)
             .crossfade(true)
             // Tumnaglarna ändras i praktiken aldrig – cacha dem även om servern säger annat.
             .respectCacheHeaders(false)

@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -138,8 +139,21 @@ private fun VaultContent(
     var pendingCategoryId by remember { mutableStateOf<String?>(null) }
     var pinToChange by remember { mutableStateOf<String?>(null) }
 
-    val searchViewModel: SearchViewModel = viewModel(factory = SearchViewModelFactory(application))
-    val libraryViewModel: LibraryViewModel = viewModel(factory = LibraryViewModelFactory(application))
+    // Vault ViewModels must not survive a lock in the Activity's ViewModelStore.
+    val vaultOwner = remember {
+        object : androidx.lifecycle.ViewModelStoreOwner {
+            override val viewModelStore = androidx.lifecycle.ViewModelStore()
+        }
+    }
+    val searchViewModel: SearchViewModel = viewModel(viewModelStoreOwner = vaultOwner, factory = SearchViewModelFactory(application))
+    val libraryViewModel: LibraryViewModel = viewModel(viewModelStoreOwner = vaultOwner, factory = LibraryViewModelFactory(application))
+
+    DisposableEffect(searchViewModel) {
+        onDispose {
+            searchViewModel.clearSensitiveState()
+            vaultOwner.viewModelStore.clear()
+        }
+    }
 
     // Panik/lås: töm känsliga data ur minnet innan appen lämnar vaulten.
     val lockEverything: () -> Unit = {
@@ -150,7 +164,8 @@ private fun VaultContent(
     // Autolås efter inaktivitet. Spelarna ligger före den här punkten, så tiden räknas
     // bara medan användaren faktiskt är i menyerna – en film som spelas låser inte appen.
     val autoLockModifier = rememberAutoLockModifier(
-        timeoutMillis = searchViewModel.preferences.autoLock.timeoutMillis,
+        timeoutMillis = if (searchViewModel.webPlaying != null || searchViewModel.nowPlaying != null) 0L
+            else searchViewModel.preferences.autoLock.timeoutMillis,
         onTimeout = lockEverything
     )
 
@@ -170,6 +185,7 @@ private fun VaultContent(
     // --- WebView-spelaren (standard): videon spelas på sajten med appens annonsblockering ---
     val onSite = searchViewModel.webPlaying
     if (onSite != null) {
+        androidx.compose.runtime.key(onSite.result.id) {
         WebPlayerScreen(
             result = onSite.result,
             skipSeconds = searchViewModel.preferences.skipSeconds,
@@ -192,6 +208,7 @@ private fun VaultContent(
             onOpenNativePlayer = { result -> searchViewModel.playNativeStream(result) },
             onBack = { searchViewModel.closeWebPlayer() }
         )
+        }
         return
     }
 
@@ -386,7 +403,7 @@ private fun PinChangeDialog(
                 OutlinedTextField(
                     value = pin,
                     onValueChange = { value ->
-                        if (value.length <= 12 && value.all { it.isDigit() }) pin = value
+                        if (value.length <= 12 && value.all { it in '0'..'9' }) pin = value
                     },
                     label = { Text("Ny kod (4–12 siffror)") },
                     singleLine = true,
@@ -397,7 +414,7 @@ private fun PinChangeDialog(
                 OutlinedTextField(
                     value = confirmation,
                     onValueChange = { value ->
-                        if (value.length <= 12 && value.all { it.isDigit() }) confirmation = value
+                        if (value.length <= 12 && value.all { it in '0'..'9' }) confirmation = value
                     },
                     label = { Text("Bekräfta ny kod") },
                     singleLine = true,
@@ -466,13 +483,13 @@ private fun DecoyContent(onLock: () -> Unit) {
 private fun rememberAutoLockModifier(timeoutMillis: Long, onTimeout: () -> Unit): Modifier {
     if (timeoutMillis <= 0L) return Modifier
 
-    val lastInteraction = remember { AtomicLong(System.currentTimeMillis()) }
+    val lastInteraction = remember { AtomicLong(android.os.SystemClock.elapsedRealtime()) }
     val currentTimeout by rememberUpdatedState(onTimeout)
 
     LaunchedEffect(timeoutMillis) {
         while (true) {
             delay(AUTO_LOCK_CHECK_INTERVAL_MS)
-            if (System.currentTimeMillis() - lastInteraction.get() >= timeoutMillis) {
+            if (android.os.SystemClock.elapsedRealtime() - lastInteraction.get() >= timeoutMillis) {
                 currentTimeout()
                 break
             }
@@ -483,7 +500,7 @@ private fun rememberAutoLockModifier(timeoutMillis: Long, onTimeout: () -> Unit)
         awaitPointerEventScope {
             while (true) {
                 awaitPointerEvent(PointerEventPass.Initial)
-                lastInteraction.set(System.currentTimeMillis())
+                lastInteraction.set(android.os.SystemClock.elapsedRealtime())
             }
         }
     }

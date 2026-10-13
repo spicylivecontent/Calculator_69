@@ -28,8 +28,8 @@ internal object VaultDatabasePlan {
 
     /**
      * [encryptionAvailable] är false när SQLCipher-biblioteket eller Keystore inte kan
-     * användas. Migreringen sker bara när den krypterade filen inte redan finns, så att
-     * en redan genomförd flytt aldrig körs om.
+     * användas. En kvarvarande klartextfil måste kontrolleras även om målfilen finns: en
+     * tidigare flytt kan ha avbrutits. Migreringen har en transaktionell markör.
      */
     fun layout(
         encryptionAvailable: Boolean,
@@ -37,7 +37,7 @@ internal object VaultDatabasePlan {
         plainExists: Boolean
     ): Layout = when {
         !encryptionAvailable -> Layout(encrypted = false, databaseName = PLAIN_NAME, migrateFrom = null)
-        plainExists && !encryptedExists -> Layout(true, ENCRYPTED_NAME, PLAIN_NAME)
+        plainExists -> Layout(true, ENCRYPTED_NAME, PLAIN_NAME)
         else -> Layout(encrypted = true, databaseName = ENCRYPTED_NAME, migrateFrom = null)
     }
 }

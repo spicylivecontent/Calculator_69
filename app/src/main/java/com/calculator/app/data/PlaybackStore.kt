@@ -102,14 +102,16 @@ class PlaybackStore(context: Context) {
             }
         }
 
-        val editor = prefs.edit()
+        val json = JSONObject()
+        for ((id, value) in migrated) json.put(id, JSONArray().put(value.first).put(value.second))
+        val encrypted = com.calculator.app.security.SecretCipher.encrypt(json.toString()) ?: return
+        val editor = prefs.edit().putString(KEY_POSITIONS, encrypted)
         for (id in ids) {
             editor.remove(LEGACY_POSITION_PREFIX + id)
             editor.remove(LEGACY_DURATION_PREFIX + id)
         }
-        editor.apply()
-
-        if (migrated.isNotEmpty()) writePositions(migrated)
+        // Saving the encrypted replacement and removing old keys must be atomic.
+        editor.commit()
     }
 
     fun savePlayed(result: SearchResult) {
@@ -140,7 +142,12 @@ class PlaybackStore(context: Context) {
             .filter { it.durationMs <= 0L || it.positionMs < it.durationMs - RESUME_END_MARGIN_MS }
             .take(limit)
 
-    fun clear() = prefs.edit().remove(KEY_ENTRIES).remove(KEY_POSITIONS).apply()
+    fun clear() {
+        val editor = prefs.edit().remove(KEY_ENTRIES).remove(KEY_POSITIONS)
+        prefs.all.keys.filter { it.startsWith(LEGACY_POSITION_PREFIX) || it.startsWith(LEGACY_DURATION_PREFIX) }
+            .forEach { editor.remove(it) }
+        editor.apply()
+    }
 
     private fun readAll(): List<RecentPlayback> {
         val raw = SecureValue.read(prefs.getString(KEY_ENTRIES, null)) ?: return emptyList()

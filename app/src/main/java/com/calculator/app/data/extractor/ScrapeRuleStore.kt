@@ -3,6 +3,9 @@ package com.calculator.app.data.extractor
 import android.content.Context
 import android.content.SharedPreferences
 import com.calculator.app.data.AppPreferences
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -15,7 +18,13 @@ import java.util.Locale
  * senast sparade versionen, och finns ingen sådan används de inbyggda reglerna. Bara data
  * sparas – texten tolkas med [ScrapeRules.parse] som kastar allt den inte förstår.
  */
-class ScrapeRuleStore(context: Context) {
+class ScrapeRuleStore(
+    context: Context,
+    private val fetchRules: suspend () -> String? = { Fetch.page(RULES_URL, timeoutMs = FETCH_TIMEOUT_MS) },
+    private val now: () -> Long = { System.currentTimeMillis() }
+) {
+    private val refreshMutex = Mutex()
+    private var revision = 0L
 
     private val appContext = context.applicationContext
     private val prefs: SharedPreferences =
@@ -90,14 +99,13 @@ class ScrapeRuleStore(context: Context) {
     }
 
     fun status(): Status {
-        val version = prefs.getInt(KEY_VERSION, 0)
         val rules = current()
         return Status(
             source = when {
-                version <= 0 -> Source.BUILT_IN
+                rules.version <= 0 -> Source.BUILT_IN
                 else -> Source.CACHED
             },
-            version = version,
+            version = rules.version,
             sites = rules.bySite.size,
             fetchedAt = prefs.getLong(KEY_FETCHED_AT, 0L)
         )
@@ -107,33 +115,43 @@ class ScrapeRuleStore(context: Context) {
     fun shouldRefresh(force: Boolean = false): Boolean {
         if (!preferences.remoteRulesEnabled) return false
         if (force) return true
-        if (!prefs.contains(KEY_JSON)) return true
-        val last = prefs.getLong(KEY_FETCHED_AT, 0L)
-        return System.currentTimeMillis() - last >= REFRESH_INTERVAL_MS
+        if (!prefs.contains(KEY_CHECKED_AT)) return true
+        val last = prefs.getLong(KEY_CHECKED_AT, 0L)
+        val age = now() - last
+        return age < 0 || age >= REFRESH_INTERVAL_MS
     }
 
     /**
      * Hämtar regel-filen om det behövs. Returnerar vad som hände, men kastar aldrig:
      * en trasig regel-fil får inte påverka sökningen.
      */
-    suspend fun refresh(force: Boolean = false): RefreshResult {
-        if (!shouldRefresh(force)) return RefreshResult.Skipped
+    suspend fun refresh(force: Boolean = false): RefreshResult = refreshMutex.withLock {
+        if (!shouldRefresh(force)) return@withLock RefreshResult.Skipped
+        val startedRevision = revision
+        prefs.edit().putLong(KEY_CHECKED_AT, now()).apply()
+        val body = try {
+            fetchRules()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        } ?: return@withLock RefreshResult.Failed
+        if (startedRevision != revision || !preferences.remoteRulesEnabled) return@withLock RefreshResult.Skipped
+        if (body.length > MAX_BODY_CHARS) return@withLock RefreshResult.Failed
 
-        val body = runCatching { Fetch.page(RULES_URL, timeoutMs = FETCH_TIMEOUT_MS) }.getOrNull()
-            ?: return RefreshResult.Failed
-        if (body.length > MAX_BODY_CHARS) return RefreshResult.Failed
-
-        val parsed = ScrapeRules.parse(body, minVersion = prefs.getInt(KEY_VERSION, 0))
-            ?: return RefreshResult.Failed
+        val parsed = ScrapeRules.parse(body) ?: return@withLock RefreshResult.Failed
+        val savedVersion = prefs.getInt(KEY_VERSION, 0)
+        if (parsed.version == savedVersion) return@withLock RefreshResult.Skipped
+        if (parsed.version < savedVersion) return@withLock RefreshResult.Failed
 
         prefs.edit()
             .putString(KEY_JSON, body)
             .putInt(KEY_VERSION, parsed.version)
-            .putLong(KEY_FETCHED_AT, System.currentTimeMillis())
+            .putLong(KEY_FETCHED_AT, now())
             .apply()
         cached = parsed
 
-        return RefreshResult.Updated(
+        RefreshResult.Updated(
             version = parsed.version,
             sites = parsed.bySite.size,
             rejected = parsed.rejected
@@ -142,12 +160,14 @@ class ScrapeRuleStore(context: Context) {
 
     /** Går tillbaka till de inbyggda reglerna och glömmer den sparade filen. */
     fun reset() {
-        prefs.edit().remove(KEY_JSON).remove(KEY_VERSION).remove(KEY_FETCHED_AT).apply()
+        revision++
+        prefs.edit().remove(KEY_JSON).remove(KEY_VERSION).remove(KEY_FETCHED_AT).remove(KEY_CHECKED_AT).apply()
         cached = ScrapeRules.Empty
     }
 
     /** Glömmer minnescachen, t.ex. när användaren slår av eller på hämtning. */
     fun invalidate() {
+        revision++
         cached = null
     }
 
@@ -162,6 +182,7 @@ class ScrapeRuleStore(context: Context) {
         private const val PREFS_NAME = "calculator_scrape_rules"
         private const val KEY_JSON = "rules_json"
         private const val KEY_VERSION = "rules_version"
+        private const val KEY_CHECKED_AT = "rules_checked_at"
         private const val KEY_FETCHED_AT = "rules_fetched_at"
         private const val FETCH_TIMEOUT_MS = 8_000L
         private const val MAX_BODY_CHARS = 200_000

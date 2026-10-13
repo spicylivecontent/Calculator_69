@@ -38,7 +38,7 @@ class VaultDatabasePlanTest {
     }
 
     @Test
-    fun migrationIsNeverRunTwice() {
+    fun interruptedMigrationIsRetriedWhenTheSourceStillExists() {
         val layout = VaultDatabasePlan.layout(
             encryptionAvailable = true,
             encryptedExists = true,
@@ -46,7 +46,7 @@ class VaultDatabasePlanTest {
         )
 
         assertEquals(VaultDatabasePlan.ENCRYPTED_NAME, layout.databaseName)
-        assertNull("redan migrerad – ingen dubbelimport", layout.migrateFrom)
+        assertEquals(VaultDatabasePlan.PLAIN_NAME, layout.migrateFrom)
     }
 
     @Test

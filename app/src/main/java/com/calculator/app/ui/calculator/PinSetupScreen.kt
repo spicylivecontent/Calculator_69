@@ -93,7 +93,7 @@ private fun PinField(label: String, value: String, onValueChange: (String) -> Un
     OutlinedTextField(
         value = value,
         onValueChange = { entered ->
-            if (entered.length <= 12 && entered.all { it.isDigit() }) onValueChange(entered)
+            if (entered.length <= 12 && entered.all { it in '0'..'9' }) onValueChange(entered)
         },
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
         label = { Text(label) },
@@ -112,4 +112,4 @@ private fun PinField(label: String, value: String, onValueChange: (String) -> Un
     )
 }
 
-private fun String.isValidPin(): Boolean = length in 4..12 && all { it.isDigit() }
+private fun String.isValidPin(): Boolean = length in 4..12 && all { it in '0'..'9' }

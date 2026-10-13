@@ -35,6 +35,17 @@ class ResultRankerTest {
      * faller det här testet och ändringen blir ett medvetet val.
      */
     @Test
+    fun unrelatedRichMetadataDoesNotMatchScrapedSearch() {
+        val unrelated = result("u", "A completely unrelated long title 1080p", tags = listOf("outdoor"))
+        assertTrue(ResultRanker.searchScraped(listOf(unrelated), "kitchen").isEmpty())
+    }
+
+    @Test
+    fun tagCloudTrimsTagsBeforeLookingUpTheirDisplayName() {
+        assertEquals(listOf("Kitchen"), ResultRanker.tagCloud(listOf(result("a", "A", tags = listOf(" Kitchen ")))))
+    }
+
+    @Test
     fun rankingOrderIsStableForAFixedSetOfResults() {
         val results = listOf(
             result(

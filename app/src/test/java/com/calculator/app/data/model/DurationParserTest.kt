@@ -33,6 +33,12 @@ class DurationParserTest {
     }
 
     @Test
+    fun rejectsMalformedTimesAndIntegerOverflow() {
+        listOf("1::20", ":20", "1:60", "1:99:00", "999999999999:01", "1193047 hours", "2147483647 min")
+            .forEach { assertNull(it, DurationParser.toSeconds(it)) }
+    }
+
+    @Test
     fun formatUsesShortClockStyle() {
         assertEquals("12:34", DurationParser.format(754))
         assertEquals("1:02:03", DurationParser.format(3723))

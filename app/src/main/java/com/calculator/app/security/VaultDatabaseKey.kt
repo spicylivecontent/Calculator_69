@@ -21,22 +21,27 @@ object VaultDatabaseKey {
     private var cached: ByteArray? = null
 
     /** Hämtar (eller skapar) databasens lösenord. Null om Keystore inte kan användas. */
+    @Synchronized
     fun passphrase(context: Context): ByteArray? {
-        cached?.let { return it }
+        cached?.let { return it.copyOf() }
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-        SecretCipher.decryptBytes(prefs.getString(KEY_DATABASE_PASSPHRASE, null))?.let { existing ->
+        val stored = prefs.getString(KEY_DATABASE_PASSPHRASE, null)
+        SecretCipher.decryptBytes(stored)?.let { existing ->
             if (existing.size >= 16) {
                 cached = existing
-                return existing
+                return existing.copyOf()
             }
         }
 
+        // Never replace an unreadable key: it may still unlock an existing database.
+        if (stored != null) return null
+
         val created = ByteArray(PASSPHRASE_BYTES).also { SecureRandom().nextBytes(it) }
         val wrapped = SecretCipher.encryptBytes(created) ?: return null
-        prefs.edit().putString(KEY_DATABASE_PASSPHRASE, wrapped).apply()
+        if (!prefs.edit().putString(KEY_DATABASE_PASSPHRASE, wrapped).commit()) return null
         cached = created
-        return created
+        return created.copyOf()
     }
 
     /** True om ett lösenord redan finns (används av migreringen). */

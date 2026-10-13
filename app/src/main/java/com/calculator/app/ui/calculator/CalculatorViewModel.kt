@@ -199,7 +199,7 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun isValidPin(pin: String): Boolean =
-        pin.length in MIN_PIN_LENGTH..MAX_PIN_LENGTH && pin.all { it.isDigit() }
+        pin.length in MIN_PIN_LENGTH..MAX_PIN_LENGTH && pin.all { it in '0'..'9' }
 
     private companion object {
         const val ERROR_RESULT = "Error"

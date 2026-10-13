@@ -158,6 +158,7 @@ fun VideoPlayerScreen(
     val activity = context as? Activity
     val view = LocalView.current
     val haptics = LocalHapticFeedback.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
     // Fullskärm: dölj systemfälten så länge spelaren är öppen.
     DisposableEffect(activity) {
@@ -203,7 +204,7 @@ fun VideoPlayerScreen(
             .setDefaultRequestProperties(headers)
             .setConnectTimeoutMs(CONNECT_TIMEOUT_MS)
             .setReadTimeoutMs(READ_TIMEOUT_MS)
-            .setAllowCrossProtocolRedirects(true)
+            .setAllowCrossProtocolRedirects(false)
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
 
         ExoPlayer.Builder(context)
@@ -295,6 +296,14 @@ fun VideoPlayerScreen(
             }
             exoPlayer.release()
         }
+    }
+
+    DisposableEffect(exoPlayer, lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) exoPlayer.pause()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(exoPlayer) {

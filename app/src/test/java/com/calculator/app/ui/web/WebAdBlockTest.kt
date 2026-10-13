@@ -112,6 +112,31 @@ class WebAdBlockTest {
     }
 
     @Test
+    fun strictModeBlocksExternalResourcesNotOnlyNavigation() {
+        assertTrue(WebAdBlock.isBlockedRequest("https://other.example/video.mp4", AdBlockLevel.STRICT, site))
+        assertFalse(WebAdBlock.isBlockedRequest("https://cdn.mytube.example/video.mp4", AdBlockLevel.STRICT, site))
+    }
+
+    @Test
+    fun mediaDetectionDoesNotTrustQueryParameters() {
+        assertFalse(WebAdBlock.isMedia("https://other.example/redirect?to=movie.mp4"))
+        assertEquals(NavigationDecision.EXTERNAL, WebAdBlock.navigationFor(site, "https://other.example/redirect?to=movie.mp4"))
+    }
+
+    @Test
+    fun publicSuffixTenantsAndIpAddressesAreNotTheSameSite() {
+        assertFalse(WebAdBlock.sameSite("first.github.io", "second.github.io"))
+        assertFalse(WebAdBlock.sameSite("10.0.0.1", "192.168.0.1"))
+        assertTrue(WebAdBlock.sameSite("FIRST.COM", "cdn.first.com"))
+    }
+
+    @Test
+    fun offDisablesCosmeticBlockingButNeverAllowsCleartext() {
+        assertFalse(WebAdBlock.injectionScript(AdBlockLevel.OFF).contains("display: none !important"))
+        assertTrue(WebAdBlock.isBlockedRequest("http://example.com/video.mp4", AdBlockLevel.OFF))
+    }
+
+    @Test
     fun javascriptStringsAreEscaped() {
         val value = WebAdBlock.jsString("en\"rad\\med\ntecken")
 

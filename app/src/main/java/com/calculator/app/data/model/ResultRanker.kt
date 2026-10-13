@@ -107,8 +107,11 @@ object ResultRanker {
         val terms = tokenize(text)
         if (terms.isEmpty()) return results
         return results
+            .filter { result ->
+                val haystack = normalizeTitle(result.searchableText)
+                terms.any { haystack.contains(it) }
+            }
             .map { result -> result.copy(relevance = relevanceFor(result, terms)) }
-            .filter { it.relevance > 0 }
             .sortedWith(
                 compareByDescending<SearchResult> { matchesEverything(it, terms) }
                     .thenByDescending { it.relevance }
@@ -134,7 +137,7 @@ object ResultRanker {
             .eachCount()
             .entries
             .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
-            .map { entry -> results.flatMap { it.tags }.first { tag -> tag.lowercase(Locale.ROOT) == entry.key } }
+            .map { entry -> results.flatMap { it.tags }.first { tag -> tag.trim().lowercase(Locale.ROOT) == entry.key }.trim() }
             .take(limit)
 
     /** Sätter relevans, tar bort dubbletter och sorterar spelbara träffar först. */

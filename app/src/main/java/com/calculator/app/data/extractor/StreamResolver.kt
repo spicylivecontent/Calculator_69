@@ -191,7 +191,10 @@ object StreamResolver {
                 val body = response.body ?: return null
                 val length = body.contentLength()
                 if (length > MAX_HLS_BYTES) return null
-                body.string()
+                val source = body.source()
+                source.request(MAX_HLS_BYTES.toLong() + 1)
+                if (source.buffer.size > MAX_HLS_BYTES) return null
+                source.readString(body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8)
             }
         } catch (_: Exception) {
             null
@@ -229,6 +232,7 @@ object StreamResolver {
     }
 
     private fun applyMediaHeaders(builder: Request.Builder, referer: String?) {
+        builder.tag(com.calculator.app.network.MediaRequest::class.java, com.calculator.app.network.MediaRequest)
         for ((name, value) in mediaHeaders(referer)) builder.header(name, value)
         builder.header("Accept", "*/*")
     }

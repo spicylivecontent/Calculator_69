@@ -38,9 +38,12 @@ object WebAdBlock {
     )
 
     /** True om själva förfrågan aldrig får gå till nätet. */
-    fun isBlockedRequest(url: String?, level: AdBlockLevel = AdBlockLevel.STANDARD): Boolean {
-        if (level == AdBlockLevel.OFF) return false
+    fun isBlockedRequest(url: String?, level: AdBlockLevel = AdBlockLevel.STANDARD, pageUrl: String? = null): Boolean {
         val parsed = url?.toHttpUrlOrNull() ?: return true
+        if (!parsed.isHttps) return true
+        if (level == AdBlockLevel.OFF) return false
+        if (level == AdBlockLevel.STRICT && pageUrl != null &&
+            !sameSite(pageUrl.toHttpUrlOrNull()?.host.orEmpty(), parsed.host)) return true
         if (AdBlockHosts.isBlocked(parsed.host)) return true
         if (AdBlockHosts.looksLikeAdPath(parsed.encodedPath + "?" + parsed.encodedQuery)) return true
         return false
@@ -92,26 +95,12 @@ object WebAdBlock {
     }
 
     fun isMedia(url: String): Boolean {
-        val lower = url.lowercase(Locale.ROOT)
-        return mediaHosts.any { lower.contains(it) }
+        val path = url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT) ?: return false
+        return mediaHosts.any { path.endsWith(it) }
     }
 
-    private fun registrable(host: String): String {
-        val parts = host.split('.')
-        if (parts.size <= 2) return host
-        // Enkel hantering av dubbeländelser som co.uk, com.br etc.
-        val lastTwo = parts.takeLast(2).joinToString(".")
-        return if (lastTwo in TWO_PART_SUFFIXES && parts.size >= 3) {
-            parts.takeLast(3).joinToString(".")
-        } else {
-            lastTwo
-        }
-    }
-
-    private val TWO_PART_SUFFIXES = setOf(
-        "co.uk", "org.uk", "ac.uk", "co.jp", "com.br", "com.au", "co.nz", "com.mx",
-        "co.za", "com.ar", "com.tr", "co.in", "com.cn", "co.kr"
-    )
+    private fun registrable(host: String): String =
+        "https://$host".toHttpUrlOrNull()?.let { it.topPrivateDomain() ?: it.host }.orEmpty()
 
     /** CSS som gömmer de vanligaste annons- och popunder-elementen. */
     val hideAdsCss: String = """
@@ -148,6 +137,7 @@ object WebAdBlock {
         append("var a=e.target&&e.target.closest?e.target.closest('a[target=\"_blank\"]'):null;")
         append("if(a){a.removeAttribute('target');a.setAttribute('rel','noopener noreferrer');}")
         append("},true);}catch(e){}")
+        if (level != AdBlockLevel.OFF) {
         // 2) Göm annonser med CSS och städa bort dem löpande.
         append("try{var css=").append(jsString(hideAdsCss)).append(";")
         append("var add=function(){var s=document.createElement('style');s.type='text/css';")
@@ -162,6 +152,7 @@ object WebAdBlock {
         append("}}catch(e){}};")
         append("setTimeout(sweep,800);setTimeout(sweep,2500);setTimeout(sweep,6000);")
         append("setTimeout(add,1500);}catch(e){}")
+        }
         // 3) Videohjälp: egna kontroller + spolning + position.
         append("window.__pcVideo=function(){try{")
         append("var list=document.querySelectorAll('video');var best=null;")
@@ -175,7 +166,7 @@ object WebAdBlock {
         append("window.__pcToggle=function(){try{var v=window.__pcVideo();if(!v){return 'no';}")
         append("if(v.paused){v.play();}else{v.pause();}return 'ok';}catch(e){return 'err';}};")
         append("window.__pcControls=function(on){try{var v=window.__pcVideo();if(!v){return 'no';}")
-        append("v.controls=!!on;v.setAttribute('controls',on?'controls':'');return 'ok';}catch(e){return 'err';}};")
+        append("v.controls=!!on;if(on){v.setAttribute('controls','controls');}else{v.removeAttribute('controls');}return 'ok';}catch(e){return 'err';}};")
         append("window.__pcResume=function(seconds){try{window.__pcResumeAt=(seconds>15)?seconds:0;return 'ok';}catch(e){return 'err';}};")
         append("try{setInterval(function(){var v=window.__pcVideo();if(!v||!window.__pcResumeAt){return;}")
         append("var d=isFinite(v.duration)?v.duration:0;if(d>window.__pcResumeAt+20&&(v.currentTime||0)<5){v.currentTime=window.__pcResumeAt;window.__pcResumeAt=0;}},1200);}catch(e){}")

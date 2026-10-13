@@ -8,6 +8,9 @@ import java.util.Locale
  * Lägger till privacy-vänliga headers och tar bort onödiga tracking-parametrar
  * från URL:er innan requesten skickas.
  */
+/** Marker for signed media requests whose query and headers must remain intact. */
+object MediaRequest
+
 class PrivacyInterceptor : Interceptor {
 
     // Query-parametrar som ofta används för tracking
@@ -25,7 +28,7 @@ class PrivacyInterceptor : Interceptor {
 
         // Keep media query strings intact; some signed stream URLs use parameter names
         // that also appear in the tracking list (for example "source" or "ref").
-        val isMediaProbe = original.header("Range") != null
+        val isMediaProbe = original.header("Range") != null || original.tag(MediaRequest::class.java) != null
         val cleanUrlBuilder = originalUrl.newBuilder()
         if (!isMediaProbe) {
             for (name in originalUrl.queryParameterNames) {
@@ -38,7 +41,7 @@ class PrivacyInterceptor : Interceptor {
         val cleanRequest = original.newBuilder()
             .url(cleanUrlBuilder.build())
             // Privacy-friendly headers; allow media MIME types on the range probe.
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", if (isMediaProbe) original.header("User-Agent") ?: USER_AGENT else USER_AGENT)
             .header(
                 "Accept",
                 if (isMediaProbe) "*/*" else "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"

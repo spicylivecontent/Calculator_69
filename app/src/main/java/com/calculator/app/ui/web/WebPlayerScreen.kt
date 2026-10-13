@@ -119,6 +119,7 @@ fun WebPlayerScreen(
     val context = LocalContext.current
     val activity = context as? Activity
     val view = LocalView.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val currentResult by rememberUpdatedState(result)
     val currentOnSearchTag by rememberUpdatedState(onSearchTag)
 
@@ -141,7 +142,7 @@ fun WebPlayerScreen(
     val levelHolder = remember { arrayOf(adBlockLevel) }
 
     // Fullskärm: dölj systemfälten medan spelaren är öppen.
-    DisposableEffect(activity) {
+    DisposableEffect(activity, keepScreenOn) {
         val window = activity?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
         controller?.hide(WindowInsetsCompat.Type.systemBars())
@@ -167,7 +168,7 @@ fun WebPlayerScreen(
                 databaseEnabled = false
                 mediaPlaybackRequiresUserGesture = false
                 javaScriptCanOpenWindowsAutomatically = false
-                setSupportMultipleWindows(false)
+                setSupportMultipleWindows(true)
                 loadsImagesAutomatically = true
                 mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 cacheMode = WebSettings.LOAD_DEFAULT
@@ -188,7 +189,7 @@ fun WebPlayerScreen(
                     request: WebResourceRequest?
                 ): WebResourceResponse? {
                     val url = request?.url?.toString()
-                    if (WebAdBlock.isBlockedRequest(url, levelHolder[0])) {
+                    if (WebAdBlock.isBlockedRequest(url, levelHolder[0], result.detailUrl)) {
                         blockedCounter.incrementAndGet()
                         return emptyResponse()
                     }
@@ -200,7 +201,7 @@ fun WebPlayerScreen(
                     request: WebResourceRequest?
                 ): Boolean {
                     val target = request?.url?.toString() ?: return true
-                    return when (WebAdBlock.navigationFor(view?.url, target, levelHolder[0])) {
+                    return when (WebAdBlock.navigationFor(result.detailUrl, target, levelHolder[0])) {
                         NavigationDecision.ALLOW -> {
                             currentUrl = target
                             false
@@ -285,6 +286,19 @@ fun WebPlayerScreen(
         }
     }
 
+    DisposableEffect(webView, lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                webView.evaluateJavascript("var v=window.__pcVideo&&window.__pcVideo();if(v){v.pause();}", null)
+                webView.onPause()
+            } else if (event == androidx.lifecycle.Lifecycle.Event.ON_START) {
+                webView.onResume()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // Ny video: nollställ statusen och läs in den nya sidan.
     LaunchedEffect(result.id) {
         isLoading = true
@@ -298,7 +312,12 @@ fun WebPlayerScreen(
 
     // Håll blockeringsnivån uppdaterad utan att skapa en ny WebView.
     LaunchedEffect(adBlockLevel) {
+        val changed = levelHolder[0] != adBlockLevel
         levelHolder[0] = adBlockLevel
+        if (changed) {
+            resumeApplied = false
+            webView.reload()
+        }
         blockingActive = adBlockLevel != AdBlockLevel.OFF
         webView.evaluateJavascript(WebAdBlock.injectionScript(adBlockLevel), null)
     }

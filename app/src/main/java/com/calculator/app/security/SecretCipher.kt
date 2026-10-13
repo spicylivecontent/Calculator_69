@@ -56,6 +56,7 @@ object SecretCipher {
         }.getOrNull()
     }
 
+    @Synchronized
     private fun getOrCreateKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
         (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
