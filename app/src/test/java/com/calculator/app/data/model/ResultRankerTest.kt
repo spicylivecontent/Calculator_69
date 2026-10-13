@@ -192,7 +192,12 @@ class ResultRankerTest {
 
         val hits = ResultRanker.searchScraped(listOf(a, b, c), "skogen")
 
-        assertEquals(listOf("c"), hits.map { it.id })
+        // "c" matchar bokstavligen ("skogen" i beskrivningen) och ska därför ligga först.
+        // "a" blir dessutom en semantisk träff: den lokala embedding-motorn lägger både
+        // "skog" och "utomhus" i konceptklustret outdoor_public, vilket är precis den
+        // översättning hybrid-rankingen är till för. "b" ("kök") är orelaterat (olika
+        // kluster => cosine similarity 0) och ska inte hittas alls.
+        assertEquals(listOf("c", "a"), hits.map { it.id })
         assertTrue(ResultRanker.searchScraped(listOf(a, b, c), "").size == 3)
     }
 
