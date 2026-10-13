@@ -865,21 +865,49 @@ talar med en server gör det mot en lokal MockWebServer med eget certifikat.
 
 ### 15.2 Instrumenterade regressionstester (17 testfall)
 
-`CalculatorUiTest` täcker kalkylatorn och PIN-flödet, `LibraryUiTest` bibliotekets UI,
-`PinStoreRegressionTest` att korrupta sparade PIN-koder inte öppnar nykonfiguration eller
-skrivs över, och `VaultRegressionTest` bland annat migrering, Keystore-kopior, rensning
-samt positioner som rensas när videohistoriken kapas. `WebPlayerHostTest` verifierar att
-HTML5-helskärmsvyn ersätter WebView:n och att hostens hide-åtgärd återställer sidan samt
-notifierar Chromium (åtgärden som Bakåt-hanteraren anropar). Körs med
-`./gradlew connectedDebugAndroidTest` på emulator eller ansluten enhet.
+`CalculatorUiTest` innehåller åtta Compose-tester för kalkylatorn och PIN-flödet:
+
+| Test | Vad det kontrollerar |
+|---|---|
+| `pinSetupRejectsMismatchedConfirmation` | Fel bekräftelse ger felmeddelande och lämnar användaren på kodvalet |
+| `pinSetupRejectsEqualCodes` | Huvudkod och reservkod får inte vara lika |
+| `savingThePinsShowsTheCalculator` | Sparade koder lämnar kodvalet och visar kalkylatorn |
+| `typedDigitsCanBeClearedAndDeleted` | Displayen, `C` och backsteg reagerar korrekt |
+| `aCalculationShowsItsResult` | `6*7=` ger 42 i både resultatraden och historiken |
+| `aWrongCodeIsCalculatedInsteadOfOpeningTheVault` | Fel kod räknas som ett tal och öppnar inte vaulten |
+| `theMainCodeIsNotCalculatedButStartsTheUnlock` | Rätt huvudkod töms utan att visas som ett beräknat resultat |
+| `negativeNumbersAndRecoveryAfterDivisionByZeroWork` | Negativa tal fungerar och räknaren återhämtar sig efter division med noll |
+
+`CleanAppStateRule` rensar inställnings- och databasfiler före varje test i
+`CalculatorUiTest`. Regeln har ordning 0 och kör därför före Compose-regeln, innan
+aktiviteten hinner läsa ett gammalt tillstånd. Keystore-nycklar lämnas kvar med flit.
+Displayen använder testtaggarna `calculator_input` och `calculator_result`, eftersom samma
+siffertext annars också kan finnas på knapparna.
+
+De övriga nio testfallen är fördelade så här:
+
+| Testfil | Antal | Vad den kontrollerar |
+|---|---:|---|
+| `LibraryUiTest` | 1 | Favoriter och Watch Later öppnar den valda videon |
+| `PinStoreRegressionTest` | 1 | Oläsbara lagrade PIN-koder stänger säkert i stället för att tillåta återställning |
+| `VaultRegressionTest` | 6 | Oberoende kopior av databasnyckeln, avbruten migrering, rensning och begränsning av positioner samt fjärrregelomförsök och coroutine-avbrott |
+| `WebPlayerHostTest` | 1 | HTML5-helskärmsvyn ersätter och återställer WebView:n samt notifierar Chromium |
+
+Kör dem med `./gradlew connectedDebugAndroidTest` på en emulator eller ansluten enhet.
+De är riktade regressionstester och hämtar inget från riktiga videosajter.
 
 ### 15.3 CI
 
-Snabbworkflowen kör JDK 17 → Android SDK 36 → `testDebugUnitTest`, `lintDebug`,
-`assembleDebug` och `assembleDebugAndroidTest` (så kompileras även instrumenterade tester)
-→ APK artifact. En separat emulatorworkflow kör `connectedDebugAndroidTest` på API 34 när
-appkod ändras. Vid byggfel skrivs Kotlin-fel och misslyckade tester dels som
-**annotations** på körningen, dels i jobbets **summary** (med testresultat-XML).
+| Workflow | När | Vad den verifierar och sparar |
+|---|---|---|
+| `Build APK` | Varje push eller manuell start | JDK 17 och Android SDK 36; `testDebugUnitTest`, `lintDebug`, `assembleDebug` och `assembleDebugAndroidTest`; APK med 40 MB-tak samt enhets- och lintrapporter |
+| `Android UI tests` | Ändringar i app/Gradle/workflow eller manuell start | KVM-accelererad Pixel 5-emulator med API 34/Google APIs; `connectedDebugAndroidTest`; instrumenterad testrapport |
+
+Det snabba jobbet kompilerar alltså de instrumenterade testerna även när emulatorjobbet inte
+triggas, exempelvis vid en ren dokumentationsändring. Vid fel skrivs Kotlin-, test- och
+lintdiagnostik som **annotations** och i jobbets **summary**. På aktuell `main` (`9fb6ba2`)
+är denna dokumentation kontrollerades var både **Build APK 38465146508** och
+**Android UI tests 38465146506** gröna.
 
 ---
 
@@ -978,9 +1006,11 @@ appkod ändras. Vid byggfel skrivs Kotlin-fel och misslyckade tester dels som
 ## 18. Utvecklingshistorik
 
 Den ursprungliga featuregrenen `arena/a0d9d445-calculator-69` utgick från `main` @
-`03ccd07` och hade 34 commits. PR #4 (39 commits) förde in den och de efterföljande
-review-fixarna i `main`; PR #3 stängdes som ersatt. Tabellen är ett urval av viktiga
-milstolpar, inte en fullständig lista över varje commit.
+`03ccd07` och hade 34 commits. PR #4 utgick efter de första 33 (vid `e04bc46`) och lade
+till sex review-fixar, totalt 39 commits som mergades i `main`. PR #3 stängdes därefter
+som ersatt, men dess sista dokumentationscommit `ec0a7ca` fanns inte i PR #4. De delar som
+fortfarande är aktuella har återförts i den här dokumentationen; inaktuella antal och
+körnings-ID:n har inte återställts. Tabellen är ett urval av viktiga milstolpar.
 
 | Commit | Innehåll |
 |---|---|
@@ -1005,6 +1035,9 @@ milstolpar, inte en fullständig lista över varje commit.
 | `0f47ec4` | **Fjärrkonfigurerbara skrapregler** (`scrape-rules.json`, validering, cache, inställningar) + `ScrapeRuleTest` |
 | `34c8f04` | **MockWebServer-tester** över TLS + injicerbar klient i `Fetch`/`MetadataExtractor` |
 | `c677a06`, `6f39e04`, `7fe21b9` | Dokumentationen uppdaterad (kryptering, robusthet, fjärrregler, tester) |
+| `4056921` | **Instrumenterade UI-tester**: sju första Compose-tester, `CleanAppStateRule`, testtaggar och egen emulatorworkflow |
+| `95fcaa5`, `ef94c0f`, `e04bc46` | CI-/testfixar: POSIX-säkert emulatorskript, `assembleDebugAndroidTest` i snabbjobbet och rättad Compose-testimport |
+| `ec0a7ca` | Dokumenterade UI-testerna och CI; låg endast kvar på den stängda PR #3-grenen och återfanns vid grenrevisionen |
 | `82dbbc1` | **Säkerhet**: krypterad sökhistorik och uppspelningshistorik (`CipherPayload`, `SecureValue`), autolås vid bakgrund och inaktivitet + `CipherPayloadTest` |
 | `612f66a` | **Stabilitet och UX**: omförsök med backoff i `Fetch`, batterisparläge, sajter som kan stängas av permanent, rättad "Fortsätt titta" (positionerna sammanfogas igen), Dependabot, APK-storlekskontroll, snapshot-test av rangordningen + `FetchRetryTest` |
 | `76b597e`, `9b68218` | Reviewfixar för vaultens livscykel, avbrytning av sökning, legacy-migrering, fail-closed-lagring, PIN-material och återupptagning |
@@ -1012,11 +1045,11 @@ milstolpar, inte en fullständig lista över varje commit.
 | `650fc10` | Merge av PR #4 till `main` |
 | `fb47444`, `5a8c27b` | PR #5: källsajtbegränsade sökomdirigeringar, detaljlänkar, HTML5-helscreen-host, bounded resume-data och regressionsfixar |
 
-Grön verifiering av appkoden: snabbworkflow **38463103371** (JVM-tester, lint, APK och
-kompilering av instrumenterade tester) samt emulatorworkflow **38463103444** (17
-instrumenterade regressioner). Dokumentationsuppdateringen `7425c85` verifierades separat
-i snabbworkflow **38463910618**. Den första appkodskörningen (`38462442461`) fångade ett
-Kotlin-kompileringsfel i testets OkHttp DNS-resolver; det rättades i `5a8c27b`.
+Efter merge av PR #5 verifierades `main` @ `9fb6ba2` grönt av snabbworkflow
+**38465146508** (JVM-tester, lint, APK och kompilering av instrumenterade tester) och
+emulatorworkflow **38465146506** (17 instrumenterade regressioner). På PR #5-grenen
+fångade den första appkodskörningen (`38462442461`) ett Kotlin-kompileringsfel i testets
+OkHttp DNS-resolver; det rättades i `5a8c27b`.
 
 ---
 

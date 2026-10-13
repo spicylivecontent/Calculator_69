@@ -18,15 +18,32 @@ gradlew.bat assembleDebug
 
 APK-filen hamnar i `app/build/outputs/apk/debug/app-debug.apk`.
 
-Kör enhetstesterna (ren JVM-logik, ingen enhet behövs):
+## Tester
+
+Projektet har 170 JVM-testfall i 21 filer. De täcker logik, parsning och nätverkskedjan
+mot en lokal MockWebServer och kräver varken en Android-enhet eller internet:
 
 ```bash
 ./gradlew testDebugUnitTest
 ```
 
+Därutöver finns 17 instrumenterade regressionstester i fem testfiler. De täcker
+kalkylatorn och PIN-flödet, biblioteket, lagrings- och migreringsflöden samt
+WebView-spelarens helskärmshost. Kör dem på en ansluten enhet eller emulator:
+
+```bash
+./gradlew connectedDebugAndroidTest
+```
+
 ## Bygg APK via GitHub Actions
 
-Workflowen **Build APK** körs automatiskt vid push till valfri branch och kan också startas manuellt från **Actions**-fliken med **Run workflow**. Den kör enhetstesterna och `assembleDebug`; när jobbet är klart laddar du ner artifacten **Calculator-debug-apk** och packar upp `app-debug.apk`. Om något går fel listas både Kotlin-fel och misslyckade tester som annotations på körningen.
+Workflowen **Build APK** körs vid varje push och kan startas manuellt från **Actions**-fliken.
+Den kör JVM-tester, Android lint, APK-bygge och kompilering av de instrumenterade testerna.
+Efteråt finns APK:n i artifacten **Calculator-debug-apk** och test-/lintrapporter i
+**unit-and-lint-reports**. Workflowen **Android UI tests** kör de 17 instrumenterade
+testerna på en API 34-emulator när appkoden ändras och sparar
+**instrumented-test-report**. Bygg- och testfel visas även som annotations och i jobbets
+summary.
 
 ## Så fungerar det
 
