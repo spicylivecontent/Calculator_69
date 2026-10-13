@@ -79,7 +79,7 @@ fun HomeScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Discover", color = VaultTextPrimary, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                     Text(
-                        "Tryck på en kategori eller sök – allt som visas går att spela",
+                        "Tryck på en kategori eller sök – videorna spelas på sajten med annonsblockering",
                         color = VaultTextSecondary,
                         fontSize = 12.sp
                     )
@@ -157,7 +157,7 @@ fun HomeScreen(
             item {
                 SectionHeader(
                     title = "Senast hittade",
-                    subtitle = "Verifierade spelbara träffar"
+                    subtitle = "Inlästa träffar med taggar och kvalitet"
                 )
             }
             items(feed, key = { "feed_${it.id}" }) { result ->
@@ -173,7 +173,7 @@ fun HomeScreen(
                 EmptyState(
                     icon = Icons.Default.Movie,
                     title = "Inget sparat ännu",
-                    message = "Välj en kategori eller gör en sökning. Resultaten kontrolleras så att bara videor som går att spela visas.",
+                    message = "Välj en kategori eller gör en sökning. Varje träff läses in med taggar, kvalitet och beskrivning innan den visas.",
                     actionLabel = "Öppna sökningen",
                     onAction = { onOpenSearch(null) }
                 )

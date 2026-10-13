@@ -62,6 +62,7 @@ import com.calculator.app.ui.components.TagChip
 import com.calculator.app.ui.components.VideoListCard
 import com.calculator.app.ui.theme.VaultAccent
 import com.calculator.app.ui.theme.VaultAmber
+import com.calculator.app.ui.theme.VaultBlue
 import com.calculator.app.ui.theme.VaultBorder
 import com.calculator.app.ui.theme.VaultSurface
 import com.calculator.app.ui.theme.VaultSurfaceHigh
@@ -234,7 +235,7 @@ fun SearchScreen(
                 }
                 item {
                     TagChip(
-                        text = "Bara spelbara",
+                        text = "Bara sidor som svarar",
                         selected = viewModel.onlyPlayable,
                         onClick = { viewModel.onOnlyPlayableChange(!viewModel.onlyPlayable) }
                     )
@@ -321,6 +322,31 @@ fun SearchScreen(
                 }
             }
 
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = viewModel.scrapedQuery,
+                onValueChange = { viewModel.onScrapedQueryChange(it) },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Sök i all skrapad information: taggar, beskrivning, kvalitet …", color = VaultTextSecondary, fontSize = 12.sp) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = VaultTextSecondary) },
+                trailingIcon = {
+                    if (viewModel.scrapedQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.clearScrapedQuery() }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Rensa", tint = VaultTextSecondary)
+                        }
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = VaultBlue,
+                    unfocusedBorderColor = VaultBorder,
+                    focusedTextColor = VaultTextPrimary,
+                    unfocusedTextColor = VaultTextPrimary,
+                    cursorColor = VaultBlue
+                ),
+                shape = RoundedCornerShape(14.dp),
+                singleLine = true
+            )
+
             if (showExclusions) {
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
@@ -375,7 +401,7 @@ fun SearchScreen(
                             .padding(14.dp)
                     ) {
                         Text(
-                            "Kontrollerar att videorna går att spela (${viewModel.verificationDone}/${viewModel.verificationTotal})",
+                            "Läser in taggar, kvalitet och beskrivning (${viewModel.verificationDone}/${viewModel.verificationTotal})",
                             color = VaultTextPrimary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium
@@ -389,7 +415,7 @@ fun SearchScreen(
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "${viewModel.verifiedCount} spelbara så långt",
+                            "${viewModel.enrichedCount} träffar med full information",
                             color = VaultAccent,
                             fontSize = 12.sp
                         )
@@ -420,6 +446,44 @@ fun SearchScreen(
                                 color = VaultAmber,
                                 fontSize = 11.sp
                             )
+                        }
+                    }
+                }
+            }
+
+            if (viewModel.availableTags.isNotEmpty()) {
+                item {
+                    Column {
+                        val tagLabel = if (viewModel.selectedTagFilters.isEmpty()) {
+                            "Taggar bland träffarna (" + viewModel.availableTags.size + ")"
+                        } else {
+                            "Filtrerar på: " + viewModel.selectedTagFilters.joinToString(" · ")
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = tagLabel,
+                                color = VaultTextSecondary,
+                                fontSize = 11.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (viewModel.selectedTagFilters.isNotEmpty()) {
+                                TextButton(onClick = { viewModel.clearTagFilters() }) {
+                                    Text("Rensa taggar", color = VaultTextSecondary, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            viewModel.availableTags.forEach { tag ->
+                                TagChip(
+                                    text = tag,
+                                    selected = viewModel.selectedTagFilters.any { it.equals(tag, ignoreCase = true) },
+                                    onClick = { viewModel.toggleTagFilter(tag) }
+                                )
+                            }
                         }
                     }
                 }
@@ -465,9 +529,9 @@ fun SearchScreen(
                 item {
                     SectionHeader(
                         title = if (viewModel.isVerifyingResults) {
-                            "${viewModel.verifiedCount} spelbara · ${(viewModel.verificationTotal - viewModel.verificationDone).coerceAtLeast(0)} kvar att kontrollera"
+                            "${viewModel.results.size} träffar · ${(viewModel.verificationTotal - viewModel.verificationDone).coerceAtLeast(0)} kvar att läsa in"
                         } else {
-                            "${viewModel.verifiedCount} spelbara träffar"
+                            "${viewModel.results.size} träffar · ${viewModel.enrichedCount} med full information"
                         },
                         subtitle = if (viewModel.activeQueries.isEmpty()) null else viewModel.activeQueries.joinToString(" · ") { "“$it”" }
                     )
@@ -478,6 +542,8 @@ fun SearchScreen(
                         onClick = { viewModel.playVideo(result) },
                         onFavorite = { viewModel.addFavorite(result) },
                         onWatchLater = { viewModel.addWatchLater(result) },
+                        onOpenOnSite = { viewModel.playVideo(result) },
+                        onSearchTag = { tag -> viewModel.searchTag(tag) },
                         onNeverShow = { viewModel.addNeverShowAgain(neverShowKeyword(result.title)) }
                     )
                 }
@@ -533,7 +599,7 @@ fun SearchScreen(
                             icon = Icons.Default.Search,
                             title = "Sök eller välj kategori",
                             message = "Skriv vad du vill se, eller öppna kategorierna och kombinera underkategorier. " +
-                                "Appen söker på alla valda sajter och visar bara videor som går att spela."
+                                "Appen läser in taggar, kategorier, kvalitet och beskrivning från varje träff så att du kan söka i all information."
                         )
                     }
                 }
@@ -543,7 +609,7 @@ fun SearchScreen(
                         icon = Icons.Default.Movie,
                         title = "Inga spelbara träffar",
                         message = "Prova andra ord, välj fler sajter eller ladda fler träffar. " +
-                            "Vi visar bara videor där strömmen svarat – stäng av \"Bara spelbara\" om du vill se okontrollerade träffar.",
+                            "Bara sidor som svarar visas – stäng av filtret om du vill se även osäkra träffar.",
                         actionLabel = if (viewModel.canLoadMore) "Ladda fler" else null,
                         onAction = if (viewModel.canLoadMore) ({ viewModel.loadMore() }) else null
                     )

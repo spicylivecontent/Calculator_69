@@ -2,6 +2,7 @@ package com.calculator.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.calculator.app.ui.web.AdBlockLevel
 
 /** Standardkvalitet i spelaren. */
 enum class PreferredQuality(val id: String, val label: String) {
@@ -49,6 +50,11 @@ class AppPreferences(context: Context) {
         get() = PreferredQuality.fromId(prefs.getString(KEY_QUALITY, PreferredQuality.AUTO.id))
         set(value) = prefs.edit().putString(KEY_QUALITY, value.id).apply()
 
+    /** Hur hårt WebView-spelaren blockerar annonser och omdirigeringar. */
+    var adBlockLevel: AdBlockLevel
+        get() = AdBlockLevel.fromId(prefs.getString(KEY_ADBLOCK, AdBlockLevel.STANDARD.id))
+        set(value) = prefs.edit().putString(KEY_ADBLOCK, value.id).apply()
+
     fun searchHistory(): List<String> =
         prefs.getString(KEY_HISTORY, null)
             ?.split(SEPARATOR)
@@ -74,6 +80,7 @@ class AppPreferences(context: Context) {
         const val KEY_GESTURE_SEEKING = "gesture_seeking"
         const val KEY_RESUME = "resume_playback"
         const val KEY_QUALITY = "preferred_quality"
+        const val KEY_ADBLOCK = "adblock_level"
         const val KEY_HISTORY = "search_history"
         const val SEPARATOR = "\n"
         const val MAX_HISTORY = 12

@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.WatchLater
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -172,7 +175,7 @@ fun Pill(
 fun PlayabilityPill(playability: Playability, modifier: Modifier = Modifier) {
     when (playability) {
         Playability.PLAYABLE -> Pill(
-            text = "Spelbar",
+            text = "Sidan svarar",
             modifier = modifier,
             background = Color(0xFF10331F),
             textColor = VaultAccent,
@@ -180,7 +183,7 @@ fun PlayabilityPill(playability: Playability, modifier: Modifier = Modifier) {
         )
 
         Playability.CHECKING -> Pill(
-            text = "Kontrollerar",
+            text = "Läser info",
             modifier = modifier,
             background = Color(0xFF2A2A17),
             textColor = VaultAmber,
@@ -188,14 +191,14 @@ fun PlayabilityPill(playability: Playability, modifier: Modifier = Modifier) {
         )
 
         Playability.UNVERIFIED -> Pill(
-            text = "Ej kontrollerad",
+            text = "Ej inläst",
             modifier = modifier,
             background = Color(0xFF2A2A17),
             textColor = VaultAmber
         )
 
         Playability.UNPLAYABLE -> Pill(
-            text = "Går inte att spela",
+            text = "Borta",
             modifier = modifier,
             background = Color(0xFF33191B),
             textColor = Color(0xFFFF8A80),
@@ -232,6 +235,8 @@ fun VideoListCard(
     onFavorite: (() -> Unit)? = null,
     onWatchLater: (() -> Unit)? = null,
     onNeverShow: (() -> Unit)? = null,
+    onOpenOnSite: (() -> Unit)? = null,
+    onSearchTag: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -307,6 +312,25 @@ fun VideoListCard(
                     PlayabilityPill(result.playability)
                 }
                 Spacer(Modifier.height(4.dp))
+                if (result.description != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = result.description,
+                        color = VaultTextSecondary,
+                        fontSize = 11.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (result.tags.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(result.tagsPreview(6), key = { it }) { tag ->
+                            TagChip(text = tag, selected = false, onClick = { onSearchTag?.invoke(tag) })
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (onFavorite != null) {
                         IconButton(onClick = onFavorite, modifier = Modifier.size(30.dp)) {
@@ -318,10 +342,19 @@ fun VideoListCard(
                             Icon(Icons.Default.WatchLater, contentDescription = "Titta senare", tint = VaultBlue, modifier = Modifier.size(17.dp))
                         }
                     }
+                    if (onOpenOnSite != null) {
+                        IconButton(onClick = onOpenOnSite, modifier = Modifier.size(30.dp)) {
+                            Icon(Icons.Default.Public, contentDescription = "Öppna på sajten", tint = VaultAccent, modifier = Modifier.size(17.dp))
+                        }
+                    }
                     if (onNeverShow != null) {
                         IconButton(onClick = onNeverShow, modifier = Modifier.size(30.dp)) {
                             Icon(Icons.Default.Block, contentDescription = "Visa aldrig igen", tint = VaultTextSecondary, modifier = Modifier.size(17.dp))
                         }
+                    }
+                    if (result.isEnriched && result.tagCount > 0) {
+                        Spacer(Modifier.weight(1f))
+                        StatBadge(text = "${result.tagCount} taggar", color = VaultTextSecondary)
                     }
                 }
             }

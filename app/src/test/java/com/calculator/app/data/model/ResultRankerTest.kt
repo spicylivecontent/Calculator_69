@@ -11,7 +11,9 @@ class ResultRankerTest {
         title: String,
         playability: Playability = Playability.UNVERIFIED,
         durationSeconds: Int? = null,
-        site: String = "eporner"
+        site: String = "eporner",
+        tags: List<String> = emptyList(),
+        description: String? = null
     ) = SearchResult(
         id = id,
         title = title,
@@ -20,7 +22,10 @@ class ResultRankerTest {
         detailUrl = "https://example.com/$id",
         sourceSite = site,
         playability = playability,
-        durationSeconds = durationSeconds
+        durationSeconds = durationSeconds,
+        tags = tags,
+        description = description,
+        tagCount = tags.size
     )
 
     @Test
@@ -85,6 +90,75 @@ class ResultRankerTest {
 
         val shortest = ResultRanker.applySort(listOf(long, unknown, short), SortOrder.SHORTEST)
         assertEquals(listOf("short", "long", "unknown"), shortest.map { it.id })
+    }
+
+    @Test
+    fun scrapedTagsAndDescriptionRaiseRelevance() {
+        val plain = result("plain", "Något helt annat")
+        val tagged = result(
+            "tagged",
+            "Något helt annat",
+            tags = listOf("kitchen", "blonde"),
+            description = "Hon lagar mat i köket innan det blir stökigt."
+        )
+
+        assertTrue(
+            ResultRanker.relevanceFor(tagged, listOf("kitchen")) >
+                ResultRanker.relevanceFor(plain, listOf("kitchen"))
+        )
+
+        val ranked = ResultRanker.rank(listOf(plain, tagged), listOf("kitchen", "blonde"))
+        assertEquals("tagged", ranked.first().id)
+    }
+
+    @Test
+    fun matchesEverythingChecksTagsAndDescription() {
+        val tagged = result(
+            "tagged",
+            "Blonde clip",
+            tags = listOf("kitchen"),
+            description = "Hon dansar på ett bord"
+        )
+
+        assertTrue(ResultRanker.matchesEverything(tagged, listOf("blonde", "kitchen")))
+        assertTrue(ResultRanker.matchesEverything(tagged, listOf("dansar")))
+        assertFalse(ResultRanker.matchesEverything(tagged, listOf("blonde", "motorcycle")))
+        assertTrue(ResultRanker.matchesEverything(tagged, emptyList()))
+    }
+
+    @Test
+    fun searchScrapedFindsMatchesInTaggedInformation() {
+        val a = result("a", "Klipp ett", tags = listOf("utomhus", "sensuell"))
+        val b = result("b", "Klipp två", tags = listOf("kök"))
+        val c = result("c", "Klipp tre", description = "En lång promenad i skogen")
+
+        val hits = ResultRanker.searchScraped(listOf(a, b, c), "skogen")
+
+        assertEquals(listOf("c"), hits.map { it.id })
+        assertTrue(ResultRanker.searchScraped(listOf(a, b, c), "").size == 3)
+    }
+
+    @Test
+    fun tagFilterRequiresEveryTag() {
+        val a = result("a", "A", tags = listOf("kök", "amatör"))
+        val b = result("b", "B", tags = listOf("kök"))
+
+        assertEquals(listOf("a"), ResultRanker.filterByTags(listOf(a, b), listOf("kök", "amatör")).map { it.id })
+        assertEquals(listOf("a", "b"), ResultRanker.filterByTags(listOf(a, b), emptyList()).map { it.id })
+    }
+
+    @Test
+    fun tagCloudCountsTheMostCommonTagsFirst() {
+        val results = listOf(
+            result("a", "A", tags = listOf("kök", "amatör")),
+            result("b", "B", tags = listOf("kök")),
+            result("c", "C", tags = listOf("kök", "utomhus"))
+        )
+
+        val cloud = ResultRanker.tagCloud(results, 3)
+
+        assertEquals("kök", cloud.first().lowercase())
+        assertEquals(3, cloud.size)
     }
 
     @Test

@@ -55,6 +55,7 @@ import com.calculator.app.ui.library.LibraryScreen
 import com.calculator.app.ui.library.LibraryViewModel
 import com.calculator.app.ui.library.LibraryViewModelFactory
 import com.calculator.app.ui.player.VideoPlayerScreen
+import com.calculator.app.ui.web.WebPlayerScreen
 import com.calculator.app.ui.search.SearchScreen
 import com.calculator.app.ui.search.SearchViewModel
 import com.calculator.app.ui.search.SearchViewModelFactory
@@ -147,7 +148,35 @@ private fun VaultContent(
     val continueWatching = remember(playbackRevision) { searchViewModel.continueWatching() }
     val recentPlaybacks = remember(playbackRevision) { searchViewModel.recentPlaybacks(24) }
 
-    // --- Spelaren ---
+    // --- WebView-spelaren (standard): videon spelas på sajten med appens annonsblockering ---
+    val onSite = searchViewModel.webPlaying
+    if (onSite != null) {
+        WebPlayerScreen(
+            result = onSite.result,
+            skipSeconds = searchViewModel.preferences.skipSeconds,
+            keepScreenOn = searchViewModel.preferences.keepScreenOn,
+            adBlockLevel = searchViewModel.adBlockLevel,
+            onAdBlockLevelChange = { searchViewModel.onAdBlockLevelChange(it) },
+            startPositionMs = onSite.startPositionMs,
+            hasNext = onSite.hasNext,
+            hasPrevious = onSite.hasPrevious,
+            onNext = { searchViewModel.playRelative(1) },
+            onPrevious = { searchViewModel.playRelative(-1) },
+            onProgress = { videoId, positionMs, durationMs ->
+                searchViewModel.onPlaybackProgress(videoId, positionMs, durationMs)
+            },
+            onSearchTag = { tag ->
+                searchViewModel.closeWebPlayer()
+                currentTab = VaultTab.SEARCH
+                searchViewModel.searchTag(tag)
+            },
+            onOpenNativePlayer = { result -> searchViewModel.playNativeStream(result) },
+            onBack = { searchViewModel.closeWebPlayer() }
+        )
+        return
+    }
+
+    // --- Inbyggd spelare (beta) ---
     val playing = searchViewModel.nowPlaying
     if (playing != null) {
         VideoPlayerScreen(
@@ -249,6 +278,8 @@ private fun VaultContent(
                     historySize = searchViewModel.searchHistory.size,
                     onlyPlayable = searchViewModel.onlyPlayable,
                     onOnlyPlayableChange = { searchViewModel.onOnlyPlayableChange(it) },
+                    adBlockLevel = searchViewModel.adBlockLevel,
+                    onAdBlockLevelChange = { searchViewModel.onAdBlockLevelChange(it) },
                     onLock = onLock,
                     onOpenChangePin = { pinType -> pinToChange = pinType },
                     onClearSearchHistory = { searchViewModel.clearSearchHistory() }

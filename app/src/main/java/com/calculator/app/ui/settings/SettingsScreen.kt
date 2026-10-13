@@ -40,6 +40,7 @@ import com.calculator.app.data.AppPreferences
 import com.calculator.app.data.PreferredQuality
 import com.calculator.app.ui.components.SectionHeader
 import com.calculator.app.ui.components.TagChip
+import com.calculator.app.ui.web.AdBlockLevel
 import com.calculator.app.ui.theme.VaultAccent
 import com.calculator.app.ui.theme.VaultBorder
 import com.calculator.app.ui.theme.VaultSurface
@@ -53,6 +54,8 @@ fun SettingsScreen(
     historySize: Int,
     onlyPlayable: Boolean,
     onOnlyPlayableChange: (Boolean) -> Unit,
+    adBlockLevel: AdBlockLevel = preferences.adBlockLevel,
+    onAdBlockLevelChange: (AdBlockLevel) -> Unit = {},
     onLock: () -> Unit,
     onOpenChangePin: (String) -> Unit,
     onClearSearchHistory: () -> Unit,
@@ -157,11 +160,52 @@ fun SettingsScreen(
             )
         }
 
+        item { SectionHeader(title = "WebView-spelaren") }
+        item {
+            VaultSettingCard(
+                title = "Annonsblockering",
+                subtitle = adBlockLevel.label
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AdBlockLevel.entries.forEach { level ->
+                        TagChip(
+                            text = level.label,
+                            selected = adBlockLevel == level,
+                            onClick = {
+                                preferences.adBlockLevel = level
+                                onAdBlockLevelChange(level)
+                            }
+                        )
+                    }
+                    Text(
+                        "Blockerar annons-, popunder- och trackingdomäner, stoppar popup-fönster och " +
+                            "omdirigeringar samt gömmer annonsytor på sidan. Antalet blockerade förfrågningar " +
+                            "visas i spelaren.",
+                        color = VaultTextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+        item {
+            VaultSettingCard(
+                title = "Uppspelning",
+                subtitle = "Videorna spelas på sajten i en inbyggd webbläsare med annonsblockering"
+            ) {
+                Text(
+                    "Välj \"Direktuppspelning (beta)\" i spelarens meny om du hellre vill spela upp en " +
+                        "extraherad ström i appens egen spelare.",
+                    color = VaultTextSecondary,
+                    fontSize = 11.sp
+                )
+            }
+        }
+
         item { SectionHeader(title = "Sökning") }
         item {
             VaultToggleCard(
-                title = "Visa bara spelbara videor",
-                subtitle = "Alla träffar kontrolleras mot strömmen innan de visas",
+                title = "Visa bara sidor som svarar",
+                subtitle = "Träffar vars detaljsida inte kan läsas in döljs",
                 checked = onlyPlayable,
                 onCheckedChange = onOnlyPlayableChange
             )

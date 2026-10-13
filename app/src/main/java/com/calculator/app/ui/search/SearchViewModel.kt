@@ -27,6 +27,7 @@ import com.calculator.app.data.model.SearchResult
 import com.calculator.app.data.model.SortOrder
 import com.calculator.app.data.taxonomy.SearchTaxonomy
 import com.calculator.app.data.taxonomy.Subcategory
+import com.calculator.app.ui.web.AdBlockLevel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,8 +48,19 @@ data class NowPlaying(
     val hasPrevious: Boolean get() = queueIndex > 0
 }
 
+/** Videon som visas i WebView-spelaren, med kö för nästa/föregående video. */
+data class WebPlaying(
+    val result: SearchResult,
+    val startPositionMs: Long = 0L,
+    val queueIndex: Int = 0,
+    val queueSize: Int = 1
+) {
+    val hasNext: Boolean get() = queueIndex < queueSize - 1
+    val hasPrevious: Boolean get() = queueIndex > 0
+}
+
 /**
- * Håller ihop sökning, verifiering av spelbara träffar och uppspelning.
+ * Håller ihop sökning, inläsning av all information om träffarna och uppspelning.
  *
  * Sökningen sker i två steg: först samlas alla träffar in (de visas direkt med
  * status "kontrollerar"), därefter kontrolleras strömmarna i tur och ordning.
@@ -124,11 +136,30 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var isLoadingMore by mutableStateOf(false)
         private set
 
+    /** Antal träffar vars detaljsida ska läsas in / har lästs in. */
     var verificationTotal by mutableStateOf(0)
         private set
 
     var verificationDone by mutableStateOf(0)
         private set
+
+    /** Taggar som används för att filtrera träffarna direkt i appen. */
+    var selectedTagFilters by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /** Taggar som finns bland träffarna, vanligast först. */
+    var availableTags by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    /** Fritext som söks direkt i allt som skrapats in (rubrik, taggar, beskrivning). */
+    var scrapedQuery by mutableStateOf("")
+        private set
+
+    /** True när träffar visas medan deras information läses in. */
+    val isEnriching: Boolean get() = isVerifyingResults
+
+    /** Hur många av träffarna som har fått taggar och beskrivning inlästa. */
+    val enrichedCount: Int get() = results.count { it.isEnriched }
 
     var canLoadMore by mutableStateOf(false)
         private set
@@ -138,7 +169,16 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         private set
 
     // ---------- Uppspelning ----------
+    /** Videon som spelas på sajten i WebView-spelaren (standardvägen). */
+    var webPlaying by mutableStateOf<WebPlaying?>(null)
+        private set
+
+    /** Videon som spelas i den inbyggda spelaren (beta, kräver extraherad ström). */
     var nowPlaying by mutableStateOf<NowPlaying?>(null)
+        private set
+
+    /** Annonsblockeringsnivå för WebView-spelaren. */
+    var adBlockLevel by mutableStateOf(preferences.adBlockLevel)
         private set
 
     var isResolvingStream by mutableStateOf(false)
@@ -202,6 +242,53 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         search()
     }
 
+    /** Filtrerar träffarna på en tagg (växlar av/på). */
+    fun toggleTagFilter(tag: String) {
+        val cleaned = tag.trim()
+        if (cleaned.isBlank()) return
+        selectedTagFilters = if (selectedTagFilters.any { it.equals(cleaned, ignoreCase = true) }) {
+            selectedTagFilters.filterNot { it.equals(cleaned, ignoreCase = true) }.toSet()
+        } else {
+            selectedTagFilters + cleaned
+        }
+        publishResults()
+    }
+
+    fun clearTagFilters() {
+        selectedTagFilters = emptySet()
+        publishResults()
+    }
+
+    /** Sök vidare på en tagg: filtrerar träffarna och gör en ny sökning på sajterna. */
+    fun searchTag(tag: String) {
+        val cleaned = tag.trim()
+        if (cleaned.isBlank()) return
+        selectedTagFilters = selectedTagFilters + cleaned
+        val base = query.trim()
+        query = if (base.isEmpty() || base.contains(cleaned, ignoreCase = true)) {
+            if (base.isEmpty()) cleaned else base
+        } else {
+            "$base $cleaned"
+        }
+        search()
+    }
+
+    /** Avancerad sökning direkt i all skrapad information. */
+    fun onScrapedQueryChange(text: String) {
+        scrapedQuery = text
+        publishResults()
+    }
+
+    fun clearScrapedQuery() {
+        scrapedQuery = ""
+        publishResults()
+    }
+
+    fun onAdBlockLevelChange(level: AdBlockLevel) {
+        adBlockLevel = level
+        preferences.adBlockLevel = level
+    }
+
     fun onSubcategoryToggle(subcategoryId: String) {
         selectedSubcategoryIds = if (subcategoryId in selectedSubcategoryIds) {
             selectedSubcategoryIds - subcategoryId
@@ -246,6 +333,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         query = ""
         negativeKeywords = ""
         selectedSubcategoryIds = emptySet()
+        selectedTagFilters = emptySet()
+        availableTags = emptyList()
+        scrapedQuery = ""
         activePlan = null
         candidates.clear()
         results = emptyList()
@@ -312,7 +402,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 siteReports = outcome.reports
                 canLoadMore = outcome.reports.any { it.count > 0 }
                 isSearching = false
-                verifyPending(plan, waveLimit = FULL_WAVE_LIMIT, budget = FULL_VERIFY_BUDGET)
+                enrichPending(plan, waveLimit = FULL_WAVE_LIMIT, budget = FULL_VERIFY_BUDGET)
                 finalizeSearch()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -342,7 +432,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     pageCount = 1,
                     onBatch = { batch -> applyBatch(batch) }
                 )
-                verifyPending(plan, waveLimit = FULL_WAVE_LIMIT, budget = LOAD_MORE_BUDGET)
+                enrichPending(plan, waveLimit = FULL_WAVE_LIMIT, budget = LOAD_MORE_BUDGET)
                 finalizeSearch()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -379,8 +469,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         if (added > 0) publishResults()
     }
 
-    private suspend fun verifyPending(plan: SearchPlanner.Plan, waveLimit: Int, budget: Int): Int {
-        var verified = 0
+    /**
+     * Läser in all information om träffarna (taggar, kategorier, medverkande,
+     * kvalitet, längd och beskrivning) i vågor, så att listan fylls på medan
+     * hämtningen pågår. Sidor som inte svarar tas bort.
+     */
+    private suspend fun enrichPending(plan: SearchPlanner.Plan, waveLimit: Int, budget: Int): Int {
+        var enriched = 0
         var waves = 0
         var spent = 0
 
@@ -393,16 +488,16 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
             spent += pending.size
             verificationTotal += pending.size
-            verified += searcher.verifyPlayable(pending) { updated ->
-                withContext(Dispatchers.Main) { applyVerified(updated) }
+            enriched += searcher.enrichMetadata(pending) { updated ->
+                withContext(Dispatchers.Main) { applyEnriched(updated) }
             }
             waves++
-            if (verified >= TARGET_VERIFIED) break
+            if (enriched >= TARGET_VERIFIED) break
         }
-        return verified
+        return enriched
     }
 
-    private fun applyVerified(updated: SearchResult) {
+    private fun applyEnriched(updated: SearchResult) {
         verificationDone++
         candidates[updated.id] = updated
         publishResults()
@@ -414,8 +509,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         }
         publishResults()
         if (onlyPlayable && results.none { it.isPlayable } && candidates.isNotEmpty()) {
-            noticeMessage = "Ingen av träffarna kunde verifieras som spelbar just nu. " +
-                "Tryck på \"Ladda fler\" för fler träffar, eller stäng av \"Bara spelbara\" för att se okontrollerade träffar."
+            noticeMessage = "Ingen av träffarna kunde läsas in just nu. Försök igen om en stund eller " +
+                "tryck på \"Ladda fler\" för fler träffar."
         }
     }
 
@@ -441,15 +536,25 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val ranked = ResultRanker.rank(candidates.values.toList(), terms)
         val filtered = ranked.filter { result ->
             lengthFilter.matches(result.durationSeconds) && when (result.playability) {
-                // Verifierat spelbara träffar visas alltid.
+                // Inlästa träffar visas alltid.
                 Playability.PLAYABLE -> true
-                // Träffar som kontrolleras just nu visas medan kontrollen pågår.
+                // Träffar som läses in just nu visas medan hämtningen pågår.
                 Playability.CHECKING -> true
-                // Allt annat döljs när användaren bara vill se spelbara videor.
+                // Sidor som är borta eller inte kontrollerade döljs som standard.
                 Playability.UNPLAYABLE, Playability.UNVERIFIED -> !onlyPlayable
             }
         }
-        results = ResultRanker.applySort(filtered, sortOrder)
+
+        availableTags = ResultRanker.tagCloud(filtered, TAG_CLOUD_SIZE)
+
+        val byTags = ResultRanker.filterByTags(filtered, selectedTagFilters)
+        results = if (scrapedQuery.isBlank()) {
+            ResultRanker.applySort(byTags, sortOrder)
+        } else {
+            // Avancerad sökning i allt som skrapats in – rubrik, taggar och beskrivning.
+            ResultRanker.searchScraped(byTags, scrapedQuery)
+        }
+
         val playable = results.filter { it.isPlayable }.take(30)
         if (playable.isNotEmpty()) lastFeed = playable
     }
@@ -458,75 +563,95 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     // Uppspelning
     // ---------------------------------------------------------------------
 
-    fun playVideo(result: SearchResult) = playResult(result, startPositionMs = -1L)
+    /** Öppnar filmen på sajten i den inbyggda WebView-spelaren. */
+    fun playVideo(result: SearchResult) = openOnSite(result, startPositionMs = -1L)
+
+    /** Öppnar en sparad/spelad video igen, med återupptagning där användaren slutade. */
+    fun playRecent(entry: RecentPlayback) {
+        openOnSite(entry.toSearchResult(), startPositionMs = entry.positionMs)
+    }
 
     fun playRelative(offset: Int) {
         val target = queue.getOrNull(queueIndex + offset) ?: return
-        playResult(target, startPositionMs = -1L, keepQueue = true)
+        openOnSite(target, startPositionMs = -1L, keepQueue = true)
     }
 
-    fun playRecent(entry: RecentPlayback) {
-        playResult(entry.toSearchResult(), startPositionMs = entry.positionMs)
+    /** Stänger WebView-spelaren. */
+    fun closeWebPlayer() {
+        webPlaying = null
+        queue = emptyList()
+        queueIndex = 0
+        playbackRevision++
     }
 
-    private fun playResult(result: SearchResult, startPositionMs: Long, keepQueue: Boolean = false) {
+    /**
+     * Beta: spelar upp en extraherad ström i den inbyggda spelaren i stället.
+     * Används bara när användaren själv väljer det i spelarens meny.
+     */
+    fun playNativeStream(result: SearchResult) {
         viewModelScope.launch {
             isResolvingStream = true
             resolvingTitle = result.title
             errorMessage = null
             try {
-                val stream = resolveStream(result)
+                val stream = resolveStream(result, forceRefresh = true)
                 if (stream == null) {
                     StreamResolver.invalidate(result.detailUrl)
-                    markVideoUnavailable(result.id)
-                    errorMessage = "Videon är inte längre tillgänglig och har tagits bort från resultaten."
+                    errorMessage = "Ingen direktuppspelningsbar ström hittades – videon öppnas på sajten i stället."
                     return@launch
                 }
-
-                val saved = when {
-                    startPositionMs >= 0L -> startPositionMs
-                    preferences.resumePlayback -> playbackStore.position(result.id)
-                    else -> 0L
-                }
-
                 val playable = result.copy(
                     streamUrl = stream.url,
                     playability = Playability.PLAYABLE,
                     qualityLabel = stream.qualityLabel ?: result.qualityLabel
                 )
-                if (candidates.containsKey(playable.id)) {
-                    candidates[playable.id] = playable
-                    publishResults()
-                } else {
-                    candidates[playable.id] = playable
-                }
-                playbackStore.savePlayed(playable)
-                playbackRevision++
-
-                if (!keepQueue || queue.isEmpty()) {
-                    queue = results.filter { it.isPlayable && !it.streamUrl.isNullOrBlank() }
-                    if (queue.none { it.id == playable.id }) queue = listOf(playable)
-                    queueIndex = queue.indexOfFirst { it.id == playable.id }.coerceAtLeast(0)
-                } else {
-                    queueIndex = queue.indexOfFirst { it.id == playable.id }.coerceAtLeast(0)
-                }
-
+                candidates[playable.id] = playable
+                publishResults()
+                webPlaying = null
                 nowPlaying = NowPlaying(
                     result = playable,
                     streamUrl = stream.url,
-                    startPositionMs = saved,
+                    startPositionMs = playbackStore.position(result.id),
                     queueIndex = queueIndex,
-                    queueSize = queue.size
+                    queueSize = queue.size.coerceAtLeast(1)
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                errorMessage = "Videon kunde inte spelas (${error.message ?: result.sourceSite})."
+                errorMessage = "Direktuppspelning misslyckades (${error.message ?: result.sourceSite})."
             } finally {
                 isResolvingStream = false
                 resolvingTitle = ""
             }
         }
+    }
+
+    private fun openOnSite(result: SearchResult, startPositionMs: Long, keepQueue: Boolean = false) {
+        val enriched = candidates[result.id] ?: result
+        val saved = when {
+            startPositionMs >= 0L -> startPositionMs
+            preferences.resumePlayback -> playbackStore.position(enriched.id)
+            else -> 0L
+        }
+
+        if (!keepQueue || queue.isEmpty()) {
+            queue = results.filter { it.isPlayable }
+            if (queue.none { it.id == enriched.id }) queue = listOf(enriched)
+            queueIndex = queue.indexOfFirst { it.id == enriched.id }.coerceAtLeast(0)
+        } else {
+            queueIndex = queue.indexOfFirst { it.id == enriched.id }.coerceAtLeast(0)
+        }
+
+        candidates[enriched.id] = enriched
+        playbackStore.savePlayed(enriched)
+        playbackRevision++
+        errorMessage = null
+        webPlaying = WebPlaying(
+            result = enriched,
+            startPositionMs = saved,
+            queueIndex = queueIndex,
+            queueSize = queue.size.coerceAtLeast(1)
+        )
     }
 
     private suspend fun resolveStream(result: SearchResult, forceRefresh: Boolean = false): ResolvedStream? {
@@ -674,6 +799,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         query = preset.query
         negativeKeywords = preset.negativeKeywords
         selectedSubcategoryIds = emptySet()
+        selectedTagFilters = emptySet()
+        scrapedQuery = ""
         activePlan = null
         candidates.clear()
         results = emptyList()
@@ -762,10 +889,11 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     private companion object {
         const val MAX_CANDIDATES = 140
-        const val WAVE_SIZE = 12
-        const val TARGET_VERIFIED = 24
-        const val FULL_WAVE_LIMIT = 9
-        const val FULL_VERIFY_BUDGET = 108
-        const val LOAD_MORE_BUDGET = 48
+        const val TAG_CLOUD_SIZE = 24
+        const val WAVE_SIZE = 10
+        const val TARGET_VERIFIED = 20
+        const val FULL_WAVE_LIMIT = 6
+        const val FULL_VERIFY_BUDGET = 60
+        const val LOAD_MORE_BUDGET = 30
     }
 }

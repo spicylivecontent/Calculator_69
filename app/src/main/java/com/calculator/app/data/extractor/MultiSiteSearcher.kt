@@ -1,5 +1,6 @@
 package com.calculator.app.data.extractor
 
+import com.calculator.app.data.model.DurationParser
 import com.calculator.app.data.model.Playability
 import com.calculator.app.data.model.SearchQuery
 import com.calculator.app.data.model.SearchResult
@@ -105,46 +106,64 @@ class MultiSiteSearcher(
     }
 
     /**
-     * Kontrollerar att träffarna går att spela upp och rapporterar varje resultat
-     * löpande via [onVerified] så att listan kan uppdateras medan kontrollen pågår.
+     * Läser in all information om träffarna (rubrik, taggar, kategorier, medverkande,
+     * kvalitet, längd och beskrivning) från deras detaljsidor och rapporterar varje
+     * träff löpande via [onEnriched] så att listan fylls på medan hämtningen pågår.
+     *
+     * Sidor som inte svarar eller där innehållet tagits bort markeras som ospelbara.
      */
-    suspend fun verifyPlayable(
+    suspend fun enrichMetadata(
         candidates: List<SearchResult>,
         concurrency: Int = VERIFICATION_CONCURRENCY,
-        onVerified: suspend (SearchResult) -> Unit = {}
+        onEnriched: suspend (SearchResult) -> Unit = {}
     ): Int = coroutineScope {
         if (candidates.isEmpty()) return@coroutineScope 0
         val semaphore = Semaphore(concurrency.coerceAtLeast(1))
-        val verified = AtomicInteger()
+        val enriched = AtomicInteger()
 
         candidates.map { candidate ->
             async(Dispatchers.IO) {
                 semaphore.withPermit {
-                    val stream = try {
-                        StreamResolver.resolvePlayable(candidate.detailUrl, candidate.sourceSite)
+                    val metadata = try {
+                        MetadataExtractor.fetch(candidate.detailUrl, candidate.sourceSite)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
                         null
                     }
 
-                    val updated = if (stream != null) {
-                        verified.incrementAndGet()
-                        candidate.copy(
-                            streamUrl = stream.url,
-                            playability = Playability.PLAYABLE,
-                            qualityLabel = stream.qualityLabel ?: candidate.qualityLabel
+                    val updated = when {
+                        metadata == null -> candidate.copy(playability = Playability.UNPLAYABLE)
+
+                        metadata.pageMissing -> candidate.copy(
+                            playability = Playability.UNPLAYABLE,
+                            tags = metadata.tags,
+                            description = metadata.description,
+                            tagCount = metadata.keywords.size
                         )
-                    } else {
-                        candidate.copy(playability = Playability.UNPLAYABLE)
+
+                        else -> {
+                            if (metadata.hasRichData) enriched.incrementAndGet()
+                            candidate.copy(
+                                title = metadata.title ?: candidate.title,
+                                tags = metadata.keywords,
+                                description = metadata.description,
+                                tagCount = metadata.keywords.size,
+                                qualityLabel = metadata.qualityLabel ?: candidate.qualityLabel,
+                                durationSeconds = metadata.durationSeconds ?: candidate.durationSeconds,
+                                duration = candidate.duration
+                                    ?: metadata.durationSeconds?.let { DurationParser.format(it) },
+                                playability = Playability.PLAYABLE
+                            )
+                        }
                     }
-                    onVerified(updated)
+                    onEnriched(updated)
                     updated
                 }
             }
         }.awaitAll()
 
-        verified.get()
+        enriched.get()
     }
 
     /** Tömmer den korta streamcachen, t.ex. när en stream slutat fungera. */
