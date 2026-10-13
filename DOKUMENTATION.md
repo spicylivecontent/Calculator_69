@@ -981,10 +981,14 @@ Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) inneh�
 | `82dbbc1` | **Säkerhet**: krypterad sökhistorik och uppspelningshistorik (`CipherPayload`, `SecureValue`), autolås vid bakgrund och inaktivitet + `CipherPayloadTest` |
 | `612f66a` | **Stabilitet och UX**: omförsök med backoff i `Fetch`, batterisparläge, sajter som kan stängas av permanent, rättad "Fortsätt titta" (positionerna sammanfogas igen), Dependabot, APK-storlekskontroll, snapshot-test av rangordningen + `FetchRetryTest` |
 
-Senaste gröna CI-körning: **38409851452** (tester + APK, 21,7 MB). Körningen för
-`82dbbc1` föll på att `PlaybackStore` hade tappat fyra funktioner (`savePlayed`, `recent`,
-`continueWatching`, `clear`) som `SearchViewModel` anropar – de återställdes i `612f66a`,
-som också ser till att positionerna sammanfogas med historiken igen.
+Senaste gröna CI-körning: **38441282284** (`9993853`, 145 testfall + APK, 24,7 MB). Två
+körningar före den var röda: `82dbbc1` föll på att `PlaybackStore` hade tappat fyra
+funktioner (`savePlayed`, `recent`, `continueWatching`, `clear`) som `SearchViewModel`
+anropar – de återställdes i `612f66a`, som också ser till att positionerna sammanfogas med
+historiken igen. Därefter föll ett enhetstest: `CipherPayloadTest` påstod att ett värde med
+IV men utan chiffertext gick att läsa tillbaka, samtidigt som trunkeringsprovet krävde
+motsatsen. Kontraktet är nu det strängare (en avbruten skrivning avvisas), och testet
+beskriver det (`9993853`).
 
 ---
 
