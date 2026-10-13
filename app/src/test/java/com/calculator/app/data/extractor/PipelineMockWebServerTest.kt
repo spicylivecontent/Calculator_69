@@ -54,9 +54,10 @@ class PipelineMockWebServerTest {
             .build()
         client = OkHttpClient.Builder()
             .sslSocketFactory(clientCertificates.sslSocketFactory(), clientCertificates.trustManager)
-            .dns(Dns { host ->
-                if (host == "evil.test") listOf(InetAddress.getByName("127.0.0.1"))
-                else Dns.SYSTEM.lookup(host)
+            .dns(object : Dns {
+                override fun lookup(hostname: String): List<InetAddress> =
+                    if (hostname == "evil.test") listOf(InetAddress.getByName("127.0.0.1"))
+                    else Dns.SYSTEM.lookup(hostname)
             })
             .build()
     }
