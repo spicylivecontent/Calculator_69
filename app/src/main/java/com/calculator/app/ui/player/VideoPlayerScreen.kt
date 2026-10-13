@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Hd
 import androidx.compose.material.icons.filled.Pause
@@ -98,6 +100,7 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.calculator.app.data.PreferredQuality
+import com.calculator.app.ui.theme.VaultPink
 import kotlinx.coroutines.delay
 import java.util.Locale
 import kotlin.math.abs
@@ -143,6 +146,8 @@ fun VideoPlayerScreen(
     hasPrevious: Boolean = false,
     onNext: (() -> Unit)? = null,
     onPrevious: (() -> Unit)? = null,
+    isFavorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null,
     onProgress: (String, Long, Long) -> Unit = { _, _, _ -> },
     onPlaybackError: (String?) -> Unit = {}
 ) {
@@ -648,6 +653,18 @@ fun VideoPlayerScreen(
                 onCycleResize = {
                     resizeOption = resizeOption.next()
                     feedback = OverlayFeedback(resizeOption.label, Icons.Default.AspectRatio)
+                },
+                isFavorite = isFavorite,
+                onToggleFavorite = onToggleFavorite?.let { toggle ->
+                    {
+                        val nextFav = !isFavorite
+                        toggle()
+                        feedback = OverlayFeedback(
+                            if (nextFav) "Sparad i favoriter" else "Borttagen ur favoriter",
+                            if (nextFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder
+                        )
+                        showControls = true
+                    }
                 }
             )
         }
@@ -754,7 +771,9 @@ private fun PlayerTopBar(
     onSelectQuality: (QualityChoice) -> Unit,
     currentSpeed: Float,
     onSelectSpeed: (Float) -> Unit,
-    onCycleResize: () -> Unit
+    onCycleResize: () -> Unit,
+    isFavorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -834,6 +853,16 @@ private fun PlayerTopBar(
                         }
                     )
                 }
+            }
+        }
+
+        if (onToggleFavorite != null) {
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = if (isFavorite) "Ta bort från favoriter" else "Spara i favoriter",
+                    tint = if (isFavorite) VaultPink else Color.White
+                )
             }
         }
 

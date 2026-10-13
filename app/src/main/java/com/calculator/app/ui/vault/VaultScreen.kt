@@ -211,6 +211,7 @@ private fun VaultContent(
     // --- WebView-spelaren (standard): videon spelas på sajten med appens annonsblockering ---
     val onSite = searchViewModel.webPlaying
     if (onSite != null) {
+        val isFavorite = favorites.any { it.id == onSite.result.id }
         androidx.compose.runtime.key(onSite.result.id) {
             WebPlayerScreen(
                 result = onSite.result,
@@ -227,6 +228,14 @@ private fun VaultContent(
                 hasPrevious = onSite.hasPrevious,
                 onNext = { searchViewModel.playRelative(1) },
                 onPrevious = { searchViewModel.playRelative(-1) },
+                isFavorite = isFavorite,
+                onToggleFavorite = {
+                    if (isFavorite) {
+                        libraryViewModel.removeFavorite(onSite.result.id)
+                    } else {
+                        searchViewModel.addFavorite(onSite.result)
+                    }
+                },
                 onProgress = { videoId, positionMs, durationMs ->
                     searchViewModel.onPlaybackProgress(videoId, positionMs, durationMs)
                 },
@@ -245,6 +254,7 @@ private fun VaultContent(
     // --- Inbyggd spelare (beta) ---
     val playing = searchViewModel.nowPlaying
     if (playing != null) {
+        val isFavorite = favorites.any { it.id == playing.result.id }
         VideoPlayerScreen(
             videoUrl = playing.streamUrl,
             title = playing.result.title,
@@ -263,6 +273,14 @@ private fun VaultContent(
             hasPrevious = playing.hasPrevious,
             onNext = { searchViewModel.playRelative(1) },
             onPrevious = { searchViewModel.playRelative(-1) },
+            isFavorite = isFavorite,
+            onToggleFavorite = {
+                if (isFavorite) {
+                    libraryViewModel.removeFavorite(playing.result.id)
+                } else {
+                    searchViewModel.addFavorite(playing.result)
+                }
+            },
             onProgress = { videoId, positionMs, durationMs ->
                 searchViewModel.onPlaybackProgress(videoId, positionMs, durationMs)
             },

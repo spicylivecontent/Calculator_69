@@ -31,8 +31,14 @@ data class SearchResult(
     val playability: Playability = Playability.UNVERIFIED,
     /** Taggar, kategorier och medverkande som skrapats från detaljsidan. */
     val tags: List<String> = emptyList(),
+    /** Medverkande (performers/modeller) från detaljsidan. */
+    val performers: List<String> = emptyList(),
+    /** Kategorier/kanaler från detaljsidan. */
+    val categories: List<String> = emptyList(),
     /** Beskrivningen från detaljsidan ("allt som händer i filmen" så långt sajten skriver det). */
     val description: String? = null,
+    /** Toppkommentarer skrapade från detaljsidan (ger extra signal om vad som händer i videon). */
+    val comments: List<String> = emptyList(),
     /** Antal skrapade nyckelord – används för att visa hur mycket information vi fick. */
     val tagCount: Int = 0,
     /** T.ex. "1080p" eller "Upp till 4K" när källan avslöjar vilken kvalitet som finns. */
@@ -45,16 +51,25 @@ data class SearchResult(
 ) {
     val isPlayable: Boolean get() = playability == Playability.PLAYABLE
 
-    /** True när detaljsidans information (taggar/beskrivning) har lästs in. */
-    val isEnriched: Boolean get() = tagCount > 0 || description != null
+    /** True när detaljsidans information (taggar/beskrivning/medverkande/kommentarer) har lästs in. */
+    val isEnriched: Boolean
+        get() = tagCount > 0 || description != null || performers.isNotEmpty() ||
+            categories.isNotEmpty() || comments.isNotEmpty()
 
-    /** Allt skrapat innehåll samlat – används av den avancerade sökningen. */
+    /** Allt skrapat innehåll samlat – används av den avancerade sökningen och AI-embedding. */
     val searchableText: String
         get() = buildString {
             append(title).append(' ')
             if (tags.isNotEmpty()) append(tags.joinToString(" ")).append(' ')
-            description?.let { append(it) }
+            if (performers.isNotEmpty()) append(performers.joinToString(" ")).append(' ')
+            if (categories.isNotEmpty()) append(categories.joinToString(" ")).append(' ')
+            description?.let { append(it).append(' ') }
+            if (comments.isNotEmpty()) append(comments.joinToString(" "))
         }.trim()
+
+    /** Rik text som skickas till den lokala embedding-modellen. */
+    val embeddingText: String
+        get() = searchableText
 
     /** Hur stor del av söktermerna som finns i den skrapade informationen (0f–1f). */
     fun coverageOf(terms: List<String>): Float {

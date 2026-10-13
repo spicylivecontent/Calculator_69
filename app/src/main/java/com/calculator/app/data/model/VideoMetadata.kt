@@ -16,6 +16,8 @@ data class VideoMetadata(
     val tags: List<String> = emptyList(),
     val performers: List<String> = emptyList(),
     val categories: List<String> = emptyList(),
+    /** De mest gillade/senaste kommentarerna skrapade från detaljsidan. */
+    val comments: List<String> = emptyList(),
     val qualityLabel: String? = null,
     val durationSeconds: Int? = null,
     val uploadDate: String? = null,
@@ -31,16 +33,18 @@ data class VideoMetadata(
             .distinctBy { it.lowercase(Locale.ROOT) }
             .take(MAX_KEYWORDS)
 
-    /** Hela den skrapade texten – det avancerade sökningen matchar mot. */
+    /** Hela den skrapade texten – det avancerade sökningen och AI-rankingen matchar mot. */
     val searchableText: String
         get() = buildString {
             title?.let { append(it).append(' ') }
-            append(keywords.joinToString(" ")).append(' ')
-            description?.let { append(it) }
+            if (keywords.isNotEmpty()) append(keywords.joinToString(" ")).append(' ')
+            description?.let { append(it).append(' ') }
+            if (comments.isNotEmpty()) append(comments.joinToString(" "))
         }.trim()
 
     val hasRichData: Boolean
-        get() = description != null || tags.isNotEmpty() || performers.isNotEmpty() || categories.isNotEmpty()
+        get() = description != null || tags.isNotEmpty() || performers.isNotEmpty() ||
+            categories.isNotEmpty() || comments.isNotEmpty()
 
     /** Hur många av söktermerna som finns i den skrapade texten (0f–1f). */
     fun coverage(terms: List<String>): Float {
@@ -60,7 +64,7 @@ data class VideoMetadata(
 
     fun isEmpty(): Boolean =
         title == null && description == null && tags.isEmpty() && performers.isEmpty() &&
-            categories.isEmpty() && qualityLabel == null && durationSeconds == null
+            categories.isEmpty() && comments.isEmpty() && qualityLabel == null && durationSeconds == null
 
     private companion object {
         const val MAX_KEYWORDS = 60

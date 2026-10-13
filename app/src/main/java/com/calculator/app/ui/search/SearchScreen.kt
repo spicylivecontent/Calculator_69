@@ -58,6 +58,7 @@ import com.calculator.app.data.model.SortOrder
 import com.calculator.app.data.taxonomy.SearchTaxonomy
 import com.calculator.app.ui.components.EmptyState
 import com.calculator.app.ui.components.SectionHeader
+import com.calculator.app.ui.components.StatBadge
 import com.calculator.app.ui.components.TagChip
 import com.calculator.app.ui.components.VideoListCard
 import com.calculator.app.ui.theme.VaultAccent
@@ -536,7 +537,10 @@ fun SearchScreen(
                         } else {
                             "${viewModel.results.size} träffar · ${viewModel.enrichedCount} med full information"
                         },
-                        subtitle = if (viewModel.activeQueries.isEmpty()) null else viewModel.activeQueries.joinToString(" · ") { "“$it”" }
+                        subtitle = if (viewModel.activeQueries.isEmpty()) null else viewModel.activeQueries.joinToString(" · ") { "“$it”" },
+                        trailing = if (viewModel.aiRankingActive) {
+                            { StatBadge(text = "AI-ranking aktiverad", color = VaultAccent) }
+                        } else null
                     )
                 }
                 items(viewModel.results, key = { it.id }) { result ->

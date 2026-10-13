@@ -1,12 +1,19 @@
 package com.calculator.app.data.model
 
+import com.calculator.app.ai.embedding.EmbeddingEngine
+import com.calculator.app.ai.embedding.OnnxEmbeddingEngine
 import java.util.Locale
 
 /**
- * Relevansberäkning, dubblettrensning och sortering av sökträffar.
- * Ren Kotlin (ingen Android-kod) så att logiken kan enhetstestas.
+ * Hybrid relevansberäkning (regelbaserad + lokal AI-embedding), dubblettrensning
+ * och sortering av sökträffar. Ren Kotlin (ingen Android-kod) så att logiken
+ * kan enhetstestas.
  */
 object ResultRanker {
+
+    const val SEMANTIC_WEIGHT = 60
+    private const val MIN_SEMANTIC_SIMILARITY = 0.15f
+    private const val SEMANTIC_SEARCH_MIN_SCORE = 20
 
     private const val PHRASE_HIT = 40
     private const val TOKEN_HIT = 14
@@ -14,11 +21,22 @@ object ResultRanker {
     private const val PLAYABLE_HIT = 8
     private const val SHORT_TITLE_PENALTY = -6
     private const val TAG_HIT = 18
+    private const val PERFORMER_HIT = 20
+    private const val CATEGORY_HIT = 14
     private const val DESCRIPTION_HIT = 9
+    private const val COMMENT_HIT = 10
     private const val COVERAGE_BONUS = 30
     private const val UNTOUCHED_METADATA_BONUS = 4
 
     private val minTokenLength = 3
+
+    /** Aktiv lokal embedding-motor för semantisk poängsättning. */
+    @Volatile
+    var embeddingEngine: EmbeddingEngine = OnnxEmbeddingEngine.Default
+
+    /** Gör att AI-ranking kan slås på/av i inställningarna. */
+    @Volatile
+    var semanticEnabled: Boolean = true
 
     private val junkWords = setOf(
         "trailer", "preview", "teaser", "sample", "compilation", "interview", "podcast",
@@ -66,25 +84,37 @@ object ResultRanker {
     }
 
     /**
-     * Relevans som även räknar in den skrapade informationen (taggar, kategorier,
-     * medverkande och beskrivning) – det är så "allt som händer i filmen" kan
-     * påverka träffbilden.
+     * Regelbaserad baspoäng som räknar in rubrik samt skrapad information (taggar,
+     * medverkande, kategorier, beskrivning och toppkommentarer).
      */
-    fun relevanceFor(result: SearchResult, terms: List<String>): Int {
+    fun ruleBasedRelevanceFor(result: SearchResult, terms: List<String>): Int {
         var score = relevanceFor(result.title, terms)
         if (terms.isEmpty()) return score
 
         val normalizedTags = result.tags.map { normalizeTitle(it) }.filter { it.isNotEmpty() }
+        val normalizedPerformers = result.performers.map { normalizeTitle(it) }.filter { it.isNotEmpty() }
+        val normalizedCategories = result.categories.map { normalizeTitle(it) }.filter { it.isNotEmpty() }
         val normalizedDescription = result.description?.let { normalizeTitle(it) }.orEmpty()
+        val normalizedComments = if (result.comments.isEmpty()) "" else normalizeTitle(result.comments.joinToString(" "))
 
         for (term in terms) {
             val normalizedTerm = normalizeTitle(term)
             if (normalizedTerm.isBlank()) continue
 
-            val inTags = normalizedTags.any { tag -> tag == normalizedTerm || tag.contains(normalizedTerm) }
-            if (inTags) score += TAG_HIT
+            if (normalizedTags.any { tag -> tag == normalizedTerm || tag.contains(normalizedTerm) }) {
+                score += TAG_HIT
+            }
+            if (normalizedPerformers.any { p -> p == normalizedTerm || p.contains(normalizedTerm) }) {
+                score += PERFORMER_HIT
+            }
+            if (normalizedCategories.any { c -> c == normalizedTerm || c.contains(normalizedTerm) }) {
+                score += CATEGORY_HIT
+            }
             if (normalizedDescription.isNotEmpty() && normalizedDescription.contains(normalizedTerm)) {
                 score += DESCRIPTION_HIT
+            }
+            if (normalizedComments.isNotEmpty() && normalizedComments.contains(normalizedTerm)) {
+                score += COMMENT_HIT
             }
         }
 
@@ -94,7 +124,45 @@ object ResultRanker {
         return score
     }
 
-    /** Sant om varje term finns i rubriken, taggarna eller beskrivningen. */
+    /**
+     * Semantisk poäng (0..60) via lokal embedding-modell och cosine similarity:
+     * `(semanticSimilarity * 60).toInt()`.
+     */
+    fun semanticScoreFor(
+        result: SearchResult,
+        terms: List<String>,
+        engine: EmbeddingEngine = embeddingEngine
+    ): Int {
+        if (!semanticEnabled || terms.isEmpty() || !engine.isReady) return 0
+        val queryText = terms.joinToString(" ").trim()
+        val docText = result.embeddingText
+        if (queryText.isBlank() || docText.isBlank()) return 0
+        val cacheKey = "${result.id}:${docText.hashCode()}"
+        val similarity = engine.similarity(queryText, docText, cacheKey = cacheKey)
+        return if (similarity >= MIN_SEMANTIC_SIMILARITY) {
+            (similarity * SEMANTIC_WEIGHT).toInt()
+        } else {
+            0
+        }
+    }
+
+    /**
+     * Hybrid relevans: `ruleBasedScore + (semanticSimilarity * 60).toInt()`.
+     * Fångar både exakta nyckelord och semantiska samband i rubrik, taggar,
+     * medverkande, kategorier, beskrivning och toppkommentarer.
+     */
+    fun relevanceFor(
+        result: SearchResult,
+        terms: List<String>,
+        engine: EmbeddingEngine = embeddingEngine
+    ): Int {
+        val ruleBasedScore = ruleBasedRelevanceFor(result, terms)
+        if (terms.isEmpty()) return ruleBasedScore
+        val semanticScore = semanticScoreFor(result, terms, engine)
+        return ruleBasedScore + semanticScore
+    }
+
+    /** Sant om varje term finns i rubriken, taggarna, medverkande, beskrivningen eller kommentarerna. */
     fun matchesEverything(result: SearchResult, terms: List<String>): Boolean {
         val wanted = terms.map { it.trim() }.filter { it.isNotEmpty() }
         if (wanted.isEmpty()) return true
@@ -102,14 +170,15 @@ object ResultRanker {
         return wanted.all { haystack.contains(it.lowercase(Locale.ROOT)) }
     }
 
-    /** Avancerad sökning direkt i allt som skrapats in (rubrik, taggar, beskrivning). */
+    /** Avancerad sökning direkt i allt som skrapats in (inklusive kommentarerna och semantisk matchning). */
     fun searchScraped(results: List<SearchResult>, text: String): List<SearchResult> {
         val terms = tokenize(text)
         if (terms.isEmpty()) return results
         return results
             .filter { result ->
                 val haystack = normalizeTitle(result.searchableText)
-                terms.any { haystack.contains(it) }
+                terms.any { haystack.contains(it) } ||
+                    semanticScoreFor(result, terms) >= SEMANTIC_SEARCH_MIN_SCORE
             }
             .map { result -> result.copy(relevance = relevanceFor(result, terms)) }
             .sortedWith(
@@ -140,11 +209,18 @@ object ResultRanker {
             .map { entry -> results.flatMap { it.tags }.first { tag -> tag.trim().lowercase(Locale.ROOT) == entry.key }.trim() }
             .take(limit)
 
-    /** Sätter relevans, tar bort dubbletter och sorterar spelbara träffar först. */
-    fun rank(results: List<SearchResult>, terms: List<String>): List<SearchResult> {
+    /** Sätter hybridrelevans (regelbaserad + semantisk), tar bort dubbletter och sorterar spelbara träffar först. */
+    fun rank(
+        results: List<SearchResult>,
+        terms: List<String>,
+        engine: EmbeddingEngine = embeddingEngine
+    ): List<SearchResult> {
         val scored = dedupeByTitle(
             results.map { result ->
-                result.copy(relevance = relevanceFor(result, terms) + if (result.isPlayable) PLAYABLE_HIT else 0)
+                result.copy(
+                    relevance = relevanceFor(result, terms, engine) +
+                        if (result.isPlayable) PLAYABLE_HIT else 0
+                )
             }
         )
         return scored.sortedWith(

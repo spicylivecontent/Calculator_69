@@ -146,4 +146,26 @@ class MetadataExtractorTest {
 
         assertTrue(metadata.tags.size <= 40)
     }
+
+    @Test
+    fun extractsTopCommentsIntoSearchableMetadata() {
+        val pageWithComments = """
+            <html>
+            <body>
+              <h1>Scene Title</h1>
+              <div id="comments">
+                <div class="comment"><p class="comment-text">04:15 nonstop ass to mouth starts here!</p></div>
+                <div class="comment"><p class="comment-text">Write a comment</p></div>
+                <div class="comment"><p class="comment-text">Best solo latina scene on the site</p></div>
+              </div>
+            </body>
+            </html>
+        """.trimIndent()
+
+        val metadata = MetadataExtractor.parse(pageWithComments, "https://mytube.example/v/comments")
+
+        assertEquals(2, metadata.comments.size)
+        assertTrue(metadata.searchableText.lowercase().contains("ass to mouth"))
+        assertTrue(metadata.searchableText.lowercase().contains("solo latina"))
+    }
 }
