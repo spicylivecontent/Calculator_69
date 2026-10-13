@@ -57,6 +57,14 @@ Workflowen **Build APK** körs automatiskt vid push till valfri branch och kan o
 
 Varje träff kontrolleras innan den visas: appen hämtar detaljsidan, läser in informationen och markerar träffen som inläst ("Sidan svarar"). Träffar vars sida inte svarar, eller där innehållet tagits bort, döljs när filtret **"Bara sidor som svarar"** är på (standard). Under tiden listan fylls på visas de träffar som är under inläsning med status "Läser info".
 
+## Sajter som kan rättas utan en ny APK
+
+En sajt som byter adress eller layout kan rättas i `scrape-rules.json` i det här repot. Appen
+hämtar filen högst en gång i dygnet (kan stängas av i inställningarna), och filen innehåller
+**bara data** – adresser, URL-mönster och CSS-selektorer, aldrig kod. Allt valideras: HTTPS
+krävs, versionen måste vara nyare än appens, och regler som inte klarar kontrollen hoppas
+över. Misslyckas hämtningen fortsätter appen med de inbyggda reglerna.
+
 ## Atkomst och integritet
 
 - Vid första start skapar du en huvudkod och en separat reservkod (4–12 siffror).

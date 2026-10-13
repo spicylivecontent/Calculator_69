@@ -61,7 +61,7 @@ stället – för situationer där någon annan tittar.
 |---|---|
 | Paketnamn | `com.calculator.app` |
 | Språk | 100 % Kotlin (Compose-UI), svenska texter hårdkodade i koden |
-| Kotlin-kod | 11 146 rader i 78 filer (`app/src/main`) + 1 521 rader tester i 14 filer |
+| Kotlin-kod | 11 676 rader i 81 filer (`app/src/main`) + 1 969 rader tester i 16 filer |
 | minSdk / targetSdk / compileSdk | 26 / 35 / 36 |
 | versionCode / versionName | 1 / 1.0 |
 | Byggsystem | Gradle 8.9 (wrapper) + AGP 8.7.3 + Kotlin 2.0.21 + KSP 2.0.21-1.0.25 |
@@ -182,7 +182,7 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 | `ui/search/SearchViewModelFactory.kt` | 17 | Skapar ViewModel med Application |
 | `ui/library/LibraryScreen.kt` | 361 | Översikt + favoriter, watch later, historik, "never show again", sparade sökningar |
 | `ui/library/LibraryViewModel.kt` (+ Factory) | 75 | Flöden från Room + borttagningsmetoder |
-| `ui/settings/SettingsScreen.kt` | 335 | Standardkvalitet, spolintervall, skärm, gester, återupptagning, annonsblockering, "bara sidor som svarar", sökhistorik, säkerhet, paniklås |
+| `ui/settings/SettingsScreen.kt` | 360 | Standardkvalitet, spolintervall, skärm, gester, återupptagning, annonsblockering, "bara sidor som svarar", sökhistorik, skrapregler, säkerhet, paniklås |
 | `ui/components/VaultComponents.kt` | 506 | ShimmerBox, Thumbnail, Pill, PlayabilityPill, SectionHeader, VideoListCard, RecentVideoCard, EmptyState, VaultCard, TagChip, StatBadge |
 
 **WebView-spelaren (standard)**
@@ -208,12 +208,15 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 | `ai/AgeSafety.kt` | 45 | Blocklista för termer som kan avse minderåriga + svensk feltext |
 | `data/taxonomy/SearchTaxonomy.kt` | 259 | 12 kategorier, 106 underkategorier, uppslag |
 | `data/extractor/SiteExtractor.kt` | 66 | Interface + `BaseSiteExtractor` (sök-URL, strukturell parsning, reservparsning, `responds`) |
+| `data/extractor/ScrapeRule.kt` | 163 | Regler från nätet: modell, validering och tolkning (testad) |
+| `data/extractor/RuleSiteExtractor.kt` | 36 | Sajt som styrs helt av en hämtad regel |
+| `data/extractor/ScrapeRuleStore.kt` | 170 | Hämtning (max en gång i dygnet), cache och status för reglerna |
 | `data/extractor/*Extractor.kt` (10 st) | 17–23 vardera | Sajtspecifik URL och listningskonfig |
 | `data/extractor/ExtractorSupport.kt` | 300 | Listningsparsning, reservparsning, titelstädning, tumnagel/längd/kvalitet |
 | `data/extractor/MultiSiteSearcher.kt` | 220 | Parallell sökning + inläsning i vågor, semafor och tidsgräns per sajt |
-| `data/extractor/MetadataExtractor.kt` | 344 | Läser ut all information från en detaljsida |
+| `data/extractor/MetadataExtractor.kt` | 350 | Läser ut all information från en detaljsida |
 | `data/extractor/MiniJson.kt` | 199 | Liten JSON-tolkare för `application/ld+json` |
-| `data/extractor/Fetch.kt` | 48 | Gemensam HTTPS-hämtning (12 s, max 6 MB) |
+| `data/extractor/Fetch.kt` | 55 | Gemensam HTTPS-hämtning (12 s, max 6 MB), klienten kan bytas i tester |
 | `data/extractor/StreamSelection.kt` | 260 | Url-normalisering, medietyper, HLS-varianter, kvalitetsgissning, `looksRemoved` |
 | `data/extractor/StreamResolver.kt` | 237 | Extrahering av mediaström (används av beta-spelaren), `clearCache()` |
 
@@ -440,6 +443,51 @@ det ger en sajt som bytt klassnamn eller layout ändå träffar i stället för 
 **Tidsgräns per sajt**: varje sajtfråga körs i `withTimeoutOrNull` (6 sekunder på Wi-Fi,
 9 på mobildata). Svarar sajten inte i tid rapporteras den i felpanelen
 ("Tog för lång tid (>6 s) – hoppades över"), resten av sökningen fortsätter.
+
+### 7.5 Skrapregler som kan uppdateras utan en ny APK
+
+En sajt som byter adress, sökväg eller klassnamn kan rättas i efterhand. Reglerna ligger i
+`scrape-rules.json` i appens öppna repo och beskriver per sajt vilken sök-URL som gäller,
+vilket URL-mönster som pekar ut videor och vilka CSS-selektorer som ger titel, tumnagel och
+längd:
+
+```json
+{
+  "version": 4,
+  "sites": {
+    "eporner": {
+      "baseUrl": "https://www.eporner.com",
+      "searchUrl": "https://www.eporner.com/search/{query}/{page}/",
+      "hrefPattern": "/video-([A-Za-z0-9]+)",
+      "requireHrefContains": "/video-",
+      "titleSelectors": ["h2", ".title"],
+      "durationSelectors": [".duration"],
+      "limit": 36
+    }
+  }
+}
+```
+
+* **Bara data, aldrig kod.** Filen kan innehålla adresser, mönster och selektorer – inga
+  skript, inga uttryck, inga kommandon.
+* **Allt valideras** (`ScrapeRules.parse`): HTTPS krävs för både bas och sök-URL, sök-URL:en
+  måste innehålla `{query}`, URL-mönstret måste gå att kompilera, och det finns tak för
+  antal sajter (40), selektorer (20 per lista, 80 tecken), mönsterlängd (240) och träffar
+  (60). En regel som inte klarar kontrollen hoppas över – de övriga används.
+* **Versionen måste öka.** Är filens `version` inte högre än den appen redan har ignoreras
+  den, så en gammal eller manipulerad fil kan inte rulla tillbaka en fungerande konfiguration.
+* **Hämtas högst en gång i dygnet** (8 sekunders tidsgräns, 200 kB tak), bara över HTTPS och
+  bara från `ScrapeRuleStore.RULES_URL`. Senaste godkända filen sparas lokalt och används
+  även offline.
+* **Graceful degradation:** misslyckas hämtningen, är filen tom eller trasig, eller är
+  funktionen avstängd, används den sparade versionen – och finns ingen sådan de inbyggda
+  reglerna. Sökningen påverkas aldrig av en långsam hämtning; den sker i bakgrunden och
+  slår igenom först när den lyckats.
+* **En regel ersätter** den inbyggda sajten med samma id, eller **lägger till** en helt ny
+  sajt i slutet av sajtlistan. Regler för nya sajter ärver annars allt från de inbyggda.
+* **I inställningarna** finns växeln "Hämta uppdaterade regler", en statusrad
+  ("Inbyggda regler (10 sajter)" eller "Hämtade regler v4 · 11 sajter · för 2 h sedan") och
+  knapparna **Uppdatera nu** och **Använd inbyggda**.
 
 ---
 
@@ -692,9 +740,11 @@ flera) som bara används av migreringen.
 
 | Fil | Nycklar | Innehåll |
 |---|---|---|
-| `calculator_app_prefs` | `only_playable` (true), `skip_seconds` (10, 5–60), `keep_screen_on` (true), `gesture_seeking` (true), `resume_playback` (true), `preferred_quality` (`auto`), `adblock_level` (`standard`), `search_history` | Alla inställningar + sökhistorik (max 12, radseparerad) |
+| `calculator_app_prefs` | `only_playable` (true), `skip_seconds` (10, 5–60), `keep_screen_on` (true), `gesture_seeking` (true), `resume_playback` (true), `preferred_quality` (`auto`), `adblock_level` (`standard`), `remote_rules_enabled` (true), `search_history` | Alla inställningar + sökhistorik (max 12, radseparerad) |
 | `calculator_playback` | `recent_entries` (JSON, max 40), `pos_<id>`, `dur_<id>` | Uppspelningshistorik och positioner per video |
 | `calculator_content_access` | `adult_content_confirmed` | Åldersbekräftelsen |
+| `calculator_vault_secret` | `db_passphrase` | Databasens nyckel, krypterad (se 13.3) |
+| `calculator_scrape_rules` | `rules_json`, `rules_version`, `rules_fetched_at` | Hämtade skrapregler + när de hämtades |
 
 **"Fortsätt titta"** visas för videor som spelats mer än 15 sekunder och som inte är
 inom 30 sekunder från slutet. Historiken kan rensas från biblioteket.
@@ -742,6 +792,10 @@ biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
   innan appen lämnar vaulten.
 - **Ingen kontoinloggning** och inga uppgifter skickas någonstans: all logik körs
   lokalt, sökningar går direkt till sajterna.
+- **Fjärrreglerna** är den enda förfrågan som inte går till en sajt användaren själv söker
+  på: en GET av `scrape-rules.json` från appens eget repo, högst en gång i dygnet, utan
+  identifierare. Den kan stängas av i inställningarna. Filen innehåller bara data och allt
+  valideras innan det används.
 - **Sandboxad WebView**: ingen fil-/innehållsåtkomst, inga tredjepartscookies, inga
   behörigheter, ingen geolokalisering.
 - **Annonsblockering** som även döljer delar av sajternas spårning.
@@ -752,7 +806,7 @@ biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
 
 ## 15. Kvalitetssäkring: tester och CI
 
-### 15.1 Enhetstester (110 testfall, JVM)
+### 15.1 Enhetstester (128 testfall, JVM)
 
 | Fil | Testar |
 |---|---|
@@ -762,6 +816,8 @@ biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
 | `data/extractor/ExtractorSupportTest.kt` | Listningsparsning, titelstädning, slug-fallback, kvalitet, HTTPS-krav |
 | `data/extractor/GenericListingTest.kt` | Reservparsning: videolänkar utan klassnamn, filtrering av tagg-/kategorilänkar, dedup, HTTPS |
 | `data/extractor/SiteConfigTest.kt` | Alla tio sajter: unika id:n, HTTPS-sök-URL med orden kvar, att mönstret matchar sajtens egna länkar, konsekvent konfiguration |
+| `data/extractor/ScrapeRuleTest.kt` | Fjärrregler: tolkning, HTTPS-krav, `{query}`, trasig regex, versionskrav, tak för selektorer/limit, nya sajter, namnvalidering |
+| `data/extractor/PipelineMockWebServerTest.kt` | Hela kedjan mot en lokal HTTPS-server (MockWebServer): lista → träffar, detaljsida → metadata, borttagen sida, serverfel, omdirigering, iso-8859-1, att klartext aldrig hämtas |
 | `data/extractor/MetadataExtractorTest.kt` | Rubrik, beskrivning, taggar, medverkande, kategorier, kvalitet, längd (inkl. ISO 8601), borttagna sidor, nyckelordstak, täckning |
 | `data/extractor/MiniJsonTest.kt` | JSON-parsning, escapes/unicode, trasig indata, nästlad sökning, listor |
 | `data/extractor/StreamSelectionTest.kt` | HTTPS-krav, medietyper, rangordning, HLS-varianter, borttagna sidor, innehållstyper |
@@ -771,7 +827,8 @@ biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
 | `data/model/ResultRankerTest.kt` | Relevans (rubrik/taggar/beskrivning), täckning, dubbletter, sortering, taggfilter, taggmoln, skrapad sökning |
 | `ui/web/WebAdBlockTest.kt` | Blockerade domäner/vägar, navigeringsbeslut, samma-sajt-logik (inkl. `co.uk`), injektionsscript, JS-escape |
 
-Kör dem med `./gradlew testDebugUnitTest`.
+Kör dem med `./gradlew testDebugUnitTest`. Testerna kräver inget internet: den enda som
+talar med en server gör det mot en lokal MockWebServer med eget certifikat.
 
 ### 15.2 CI
 
@@ -791,7 +848,8 @@ fel kan läsas utan att ladda ner loggen.
 2. **"Allt som händer i filmen"** betyder allt sajten själv skriver: rubrik, taggar,
    kategorier, medverkande och beskrivning. Ingen bild- eller ljudanalys görs.
 3. **Scraping är best-effort.** Ändrar en sajt sin HTML eller sina URL:er slutar
-   parsningen att ge träffar tills `ExtractorSupport`/konfigurationen uppdateras.
+   parsningen att ge träffar tills konfigurationen uppdateras – sedan 7.5 räcker det med
+   en ändring i `scrape-rules.json`, alltså ingen ny APK.
 4. **Annonsblockeringen är best-effort.** Nya nätverk och nya trick dyker upp; listan
    behöver underhållas.
 5. **Sidor som kräver inloggning eller har aggressiva captchas** kan visa sig sämre i
@@ -802,11 +860,13 @@ fel kan läsas utan att ladda ner loggen.
 7. **Krypteringen kan falla tillbaka på okrypterat** om SQLCipher eller Android Keystore
    inte kan användas på enheten – det är ett medvetet val för att appen aldrig ska bli
    oanvändbar, men det betyder att skyddet beror på enheten.
-7. **Inga instrumenterade UI-tester** – testerna täcker den rena logiken, inte
-   skärmarna.
-8. **Nätverksberoende tester saknas** (medvetet): tester får aldrig kräva internet.
-9. **Språket är hårdkodat på svenska** i koden (`strings.xml` innehåller bara appnamnet).
-10. **Ålderskontrollen är en självbekräftelse**, inte en verifiering.
+8. **Fjärrreglerna pekar på repots `main`-branch**, så mekanismen är aktiv först när
+   `scrape-rules.json` finns där. Byter filen adress måste `ScrapeRuleStore.RULES_URL` byggas om.
+9. **Inga instrumenterade UI-tester** – testerna täcker logiken och nätverkskedjan mot en
+   lokal server, inte skärmarna.
+10. **Inga tester mot riktiga sajter** (medvetet): testerna får aldrig kräva internet.
+11. **Språket är hårdkodat på svenska** i koden (`strings.xml` innehåller bara appnamnet).
+12. **Ålderskontrollen är en självbekräftelse**, inte en verifiering.
 
 ---
 
@@ -828,6 +888,9 @@ fel kan läsas utan att ladda ner loggen.
 | Nätverk | Samtidiga sajter | 10 (Wi-Fi) / 4 (mobildata) |
 | Nätverk | Samtidiga inläsningar | 8 (Wi-Fi) / 3 (mobildata) / 1 (offline) |
 | Säkerhet | Databasnyckel | 32 slumpade byte, AES/GCM i Keystore |
+| Skrapregler | Adress | `raw.githubusercontent.com/.../Calculator_69/main/scrape-rules.json` |
+| Skrapregler | Hämtintervall / tidsgräns / tak | 24 h / 8 s / 200 kB |
+| Skrapregler | Gränser i valideringen | 40 sajter, 20 selektorer × 80 tecken, mönster 240 tecken, 60 träffar |
 | Bilder | Coil-cache | 20 % av minnet, 64 MB på disk, tumnaglar 384×240 |
 | Nätverk | OkHttp-timeouts | 20 s anrop, 12 s connect/read/write |
 | Metadata | Beskrivning | max 1 500 tecken, 40 per lista, 60 nyckelord |
@@ -850,7 +913,7 @@ fel kan läsas utan att ladda ner loggen.
 ## 18. Utvecklingshistorik
 
 Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) innehåller
-16 commits:
+18 commits:
 
 | Commit | Innehåll |
 |---|---|
@@ -870,9 +933,14 @@ Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) inneh�
 | `85b90ad` | Robusthet och prestanda: tidsgräns och semafor per sajt, reservparsning, `NetworkCondition`, Coil-cache, `clearSensitiveState`, tre nya testfiler |
 | `3b40712` | Kompileringsfixar (`continue` i inline-lambda, deklarationsordning i `VaultScreen`) |
 | `b292d64` | **SQLCipher: krypterad databas**, Keystore-skyddad nyckel, engångsmigrering + `VaultDatabasePlanTest` |
+| `4165dea` | compileSdk 36 (krav från SQLCipher-aaret) + CI installerar SDK 36 |
+| `68ef59a` | Tre testfixar: slug-fallback i reservparsningen, nätverkstestet beskriver rätt beteende |
+| `0f47ec4` | **Fjärrkonfigurerbara skrapregler** (`scrape-rules.json`, validering, cache, inställningar) + `ScrapeRuleTest` |
+| `34c8f04` | **MockWebServer-tester** över TLS + injicerbar klient i `Fetch`/`MetadataExtractor` |
 
 Senaste gröna CI-körning: **38409851452** (tester + APK, 21,7 MB). Efterföljande
-körningar verifierar robusthetsbatchen och krypteringen (`85b90ad`, `b292d64`).
+körningar verifierar robusthetsbatchen, krypteringen, fjärrreglerna och
+MockWebServer-testerna (`85b90ad` → `34c8f04`).
 
 ---
 
