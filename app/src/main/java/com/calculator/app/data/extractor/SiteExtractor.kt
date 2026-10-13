@@ -24,6 +24,14 @@ abstract class BaseSiteExtractor : SiteExtractor {
 
     protected abstract fun searchUrl(query: String, page: Int): String
 
+    /**
+     * Liten intern yta för enhetstester och diagnostik: samma information som
+     * sökningen använder, utan att göra den publika API:n större.
+     */
+    internal val listingSpec: ListingConfig get() = listing
+
+    internal fun urlForQuery(query: String, page: Int): String = searchUrl(query, page)
+
     override suspend fun search(query: String, page: Int): List<SearchResult> {
         if (query.isBlank()) return emptyList()
         val url = try {
@@ -33,9 +41,26 @@ abstract class BaseSiteExtractor : SiteExtractor {
         }
         val html = Fetch.page(url) ?: return emptyList()
         return try {
-            ExtractorSupport.parseListings(html, listing)
+            val parsed = ExtractorSupport.parseListings(html, listing)
+            if (parsed.isNotEmpty()) return parsed
+            // Sajten kan ha bytt layout eller klassnamn – reservparsningen letar
+            // upp videolänkar på nytt i stället för att ge noll träffar.
+            ExtractorSupport.parseListingsGeneric(
+                html = html,
+                baseUrl = listing.baseUrl,
+                siteName = listing.siteName,
+                limit = listing.limit
+            )
         } catch (_: Exception) {
             emptyList()
         }
     }
+
+    /** Sant om sajten svarar och ger minst en träff (används av självtestet). */
+    suspend fun responds(query: String = "amateur"): Boolean =
+        try {
+            search(query, 1).isNotEmpty()
+        } catch (_: Exception) {
+            false
+        }
 }

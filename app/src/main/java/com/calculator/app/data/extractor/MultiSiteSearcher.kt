@@ -11,6 +11,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
+import com.calculator.app.network.NetworkCondition
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Information om en sajt som används i gränssnittet. */
@@ -38,10 +40,24 @@ data class SearchOutcome(
  * även när sajterna tolkar flerordssökningar som "alla ord måste finnas".
  */
 class MultiSiteSearcher(
-    private val extractors: List<SiteExtractor> = defaultExtractors()
+    private val extractors: List<SiteExtractor> = defaultExtractors(),
+    /** Nätverksläget styr hur många anrop som körs samtidigt och hur länge en sajt får ta. */
+    private val network: NetworkCondition = NetworkCondition.Default
 ) {
 
     val siteInfos: List<SiteInfo> = extractors.map { SiteInfo(it.siteName, it.label) }
+
+    /** Sant när en sajt tog för lång tid och hoppades över. */
+    private fun timeoutMessage(millis: Long): String = "Tog för lång tid (>${millis / 1000} s) – hoppades över"
+
+    /**
+     * En sajt får aldrig stoppa resten av sökningen: varje hämtning har en egen
+     * tidsgräns och ett fel på en sajt rapporteras i stället för att kasta vidare.
+     */
+    private suspend fun searchOne(extractor: SiteExtractor, query: String, page: Int): List<SearchResult>? =
+        withTimeoutOrNull(network.siteTimeoutMs) {
+            extractor.search(query, page)
+        }
 
     suspend fun search(
         queries: List<SearchQuery>,
@@ -54,9 +70,11 @@ class MultiSiteSearcher(
         if (queries.isEmpty()) return@coroutineScope SearchOutcome(emptyList(), emptyList())
 
         val selected = if (siteIds.isEmpty()) extractors else extractors.filter { it.siteName in siteIds }
+        val siteSemaphore = Semaphore(network.siteParallelism.coerceAtLeast(1))
 
         val perSite = selected.map { extractor ->
             async(Dispatchers.IO) {
+              siteSemaphore.withPermit {
                 val collected = LinkedHashMap<String, SearchResult>()
                 var failure: String? = null
                 var attempted = false
@@ -68,7 +86,12 @@ class MultiSiteSearcher(
                         if (collected.size >= maxPerSite) break
                         attempted = true
                         try {
-                            val found = extractor.search(query.text, page)
+                            val found = searchOne(extractor, query.text, page)
+                            if (found == null) {
+                                // Tidsgränsen slog till: hoppa över frågan men fortsätt med sajtens övriga frågor.
+                                failure = failure ?: timeoutMessage(network.siteTimeoutMs)
+                                continue
+                            }
                             if (found.isEmpty()) continue
                             val tagged = found.map { result ->
                                 result.copy(matchedTerms = (result.matchedTerms + query.terms).distinct())
@@ -89,6 +112,7 @@ class MultiSiteSearcher(
                     failure = failure,
                     attempted = attempted
                 )
+              }
             }
         }.awaitAll()
 

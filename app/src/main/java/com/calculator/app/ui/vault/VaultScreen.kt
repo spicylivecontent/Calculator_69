@@ -128,6 +128,12 @@ private fun VaultContent(
     val context = LocalContext.current
     val application = remember(context) { context.applicationContext as Application }
 
+    // Panik/lås: töm känsliga data ur minnet innan appen lämnar vaulten.
+    val lockEverything: () -> Unit = {
+        searchViewModel.clearSensitiveState()
+        onLock()
+    }
+
     var currentTab by remember { mutableStateOf(VaultTab.HOME) }
     var pendingCategoryId by remember { mutableStateOf<String?>(null) }
     var pinToChange by remember { mutableStateOf<String?>(null) }
@@ -241,7 +247,7 @@ private fun VaultContent(
                         pendingCategoryId = categoryId
                         currentTab = VaultTab.SEARCH
                     },
-                    onLock = onLock
+                    onLock = lockEverything
                 )
 
                 VaultTab.SEARCH -> SearchScreen(
@@ -280,7 +286,7 @@ private fun VaultContent(
                     onOnlyPlayableChange = { searchViewModel.onOnlyPlayableChange(it) },
                     adBlockLevel = searchViewModel.adBlockLevel,
                     onAdBlockLevelChange = { searchViewModel.onAdBlockLevelChange(it) },
-                    onLock = onLock,
+                    onLock = lockEverything,
                     onOpenChangePin = { pinType -> pinToChange = pinType },
                     onClearSearchHistory = { searchViewModel.clearSearchHistory() }
                 )

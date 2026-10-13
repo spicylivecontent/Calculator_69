@@ -27,6 +27,7 @@ import com.calculator.app.data.model.SearchResult
 import com.calculator.app.data.model.SortOrder
 import com.calculator.app.data.taxonomy.SearchTaxonomy
 import com.calculator.app.data.taxonomy.Subcategory
+import com.calculator.app.network.NetworkCondition
 import com.calculator.app.ui.web.AdBlockLevel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -68,7 +69,10 @@ data class WebPlaying(
  */
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val searcher = MultiSiteSearcher()
+    /** Läses av vid varje sökning – nätverksläget styr parallellitet och tidsgränser. */
+    private var network: NetworkCondition = NetworkCondition.current(application)
+
+    private var searcher = MultiSiteSearcher(network = network)
     private val repository = Repository(application)
     private val planner = SearchPlanner()
     val preferences = AppPreferences(application)
@@ -284,6 +288,41 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         publishResults()
     }
 
+    /**
+     * Panik/lås: tömmer allt känsligt ur minnet (träffar, frågor, taggar, historik i
+     * cache) utan att röra det som användaren sparat i biblioteket.
+     */
+    fun clearSensitiveState() {
+        searchJob?.cancel()
+        searchJob = null
+        query = ""
+        negativeKeywords = ""
+        scrapedQuery = ""
+        selectedSubcategoryIds = emptySet()
+        selectedTagFilters = emptySet()
+        availableTags = emptyList()
+        activePlan = null
+        blockedWords = emptyList()
+        candidates.clear()
+        results = emptyList()
+        lastFeed = emptyList()
+        siteReports = emptyList()
+        activeQueries = emptyList()
+        explanation = null
+        errorMessage = null
+        noticeMessage = null
+        verificationTotal = 0
+        verificationDone = 0
+        canLoadMore = false
+        page = 1
+        webPlaying = null
+        nowPlaying = null
+        queue = emptyList()
+        queueIndex = 0
+        StreamResolver.clearCache()
+        playbackRevision++
+    }
+
     fun onAdBlockLevelChange(level: AdBlockLevel) {
         adBlockLevel = level
         preferences.adBlockLevel = level
@@ -356,6 +395,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     fun search() {
         if (isSearching || isLoadingMore) return
+        network = NetworkCondition.current(getApplication())
+        searcher = MultiSiteSearcher(network = network)
 
         val plan = planner.plan(
             rawInput = query,
@@ -488,7 +529,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
             spent += pending.size
             verificationTotal += pending.size
-            enriched += searcher.enrichMetadata(pending) { updated ->
+            enriched += searcher.enrichMetadata(
+                candidates = pending,
+                concurrency = network.enrichmentParallelism
+            ) { updated ->
                 withContext(Dispatchers.Main) { applyEnriched(updated) }
             }
             waves++

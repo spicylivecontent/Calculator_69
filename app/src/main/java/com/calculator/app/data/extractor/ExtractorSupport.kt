@@ -47,6 +47,19 @@ object ExtractorSupport {
     )
 
     private val durationInText = Regex("\\b(\\d{1,2}:\\d{2}(?::\\d{2})?)\\b")
+
+    /** Länkar som aldrig är en videosida. */
+    private val NOT_VIDEO_HINTS = listOf(
+        "/tag/", "/tags/", "/category", "/categories", "/channel", "/model", "/models/",
+        "/pornstar", "/actress", "/performer", "/login", "/signup", "/register", "/search",
+        "/page/", "/user/", "/profile", "/settings", "/dmca", "/terms", "/privacy", "/contact",
+        "/help", "/upload", "/premium", "/vip", "/live/", "/cams/", "/photos/", "/photo/",
+        "/blog", "/news", "/forum", "/community", ".css", ".js", ".json", ".xml", ".jpg",
+        ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico"
+    )
+
+    /** Filändelser som betyder media, inte en detaljsida. */
+    private val VIDEO_FILE_HINTS = listOf(".m3u8", ".mp4", ".webm", ".mpd", ".ts")
     private val whitespace = Regex("\\s+")
 
     fun parseListings(html: String, config: ListingConfig): List<SearchResult> {
@@ -105,6 +118,87 @@ object ExtractorSupport {
         return results.values.toList()
     }
 
+    /**
+     * Reservparsning som används när sajtens egen konfiguration inte hittar något.
+     *
+     * I stället för att lita på klassnamn eller URL-mönster letar vi upp länkar som
+     * *ser ut* som videosidor (en slug med minst två ord, eller en siffer-id) och
+     * plockar titel, tumnagel och längd från närmaste omgivande block. Det gör att en
+     * sajt som bytt layout eller klassnamn ändå ger träffar.
+     */
+    fun parseListingsGeneric(
+        html: String,
+        baseUrl: String,
+        siteName: String,
+        limit: Int = ListingConfig.DEFAULT_LIMIT
+    ): List<SearchResult> {
+        if (html.isBlank()) return emptyList()
+        val doc = Jsoup.parse(html, baseUrl)
+        val results = LinkedHashMap<String, SearchResult>()
+
+        for (anchor in doc.select("a[href]")) {
+            if (results.size >= limit) break
+            val href = anchor.attr("href").trim()
+            if (!looksLikeVideoHref(href)) continue
+
+            val detailUrl = StreamSelection.normalize(href, baseUrl) ?: continue
+            if (!detailUrl.startsWith("https://")) continue
+
+            val path = detailUrl.substringAfter("://").substringAfter('/', "").substringBefore('?')
+            val id = path.trimEnd('/').substringAfterLast('/').ifBlank { continue }
+            if (id.length > 64) continue
+
+            val container = anchor.closest("div, li, article, figure, section") ?: anchor.parent() ?: anchor
+            val title = titleFrom(anchor, container, genericConfig(siteName, baseUrl)) ?: continue
+
+            val key = "${siteName}_$id"
+            if (results.containsKey(key)) continue
+
+            val duration = durationFrom(container, genericConfig(siteName, baseUrl))
+            results[key] = SearchResult(
+                id = key,
+                title = title,
+                thumbnailUrl = imageUrl(container, anchor, genericConfig(siteName, baseUrl)),
+                duration = duration,
+                durationSeconds = DurationParser.toSeconds(duration),
+                detailUrl = detailUrl,
+                sourceSite = siteName,
+                qualityLabel = qualityFromTitle(title)
+            )
+        }
+        return results.values.toList()
+    }
+
+    /** Heuristik: ser länken ut som en videosida? */
+    fun looksLikeVideoHref(href: String?): Boolean {
+        val raw = href?.trim().orEmpty()
+        if (raw.isEmpty() || raw.startsWith("#")) return false
+        val lower = raw.lowercase(Locale.ROOT)
+        if (lower.startsWith("javascript") || lower.startsWith("mailto") || lower.startsWith("tel")) return false
+        if (NOT_VIDEO_HINTS.any { lower.contains(it) }) return false
+
+        val path = lower.substringBefore('?').substringBefore('#')
+        val segments = path.trimEnd('/').split('/').filter { it.isNotBlank() }
+        if (segments.isEmpty()) return false
+
+        val last = segments.last().substringBeforeLast('.')
+        if (VIDEO_FILE_HINTS.any { path.endsWith(it) }) return false
+        if (last.length < 6 || last.length > 90) return false
+
+        val words = last.split('-', '_', '+').filter { it.isNotBlank() }
+        if (words.size >= 2 && words.count { it.length >= 2 } >= 2) return true
+        // Numeriskt id (minst fyra siffror) eller en blandad slug med siffror
+        if (last.all { it.isDigit() } && last.length >= 4) return true
+        return last.count { it.isDigit() } >= 3 && last.count { it.isLetter() } >= 4
+    }
+
+    private fun genericConfig(siteName: String, baseUrl: String): ListingConfig =
+        ListingConfig(
+            siteName = siteName,
+            baseUrl = baseUrl,
+            hrefPattern = Regex("."),
+            limit = ListingConfig.DEFAULT_LIMIT
+        )
     fun absoluteUrl(baseUrl: String, href: String?): String? = StreamSelection.normalize(href, baseUrl)
 
     private fun titleFrom(anchor: Element, container: Element, config: ListingConfig): String? {

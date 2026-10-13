@@ -75,6 +75,9 @@ import com.calculator.app.ui.theme.VaultSurfaceHigh
 import com.calculator.app.ui.theme.VaultTextPrimary
 import com.calculator.app.ui.theme.VaultTextSecondary
 
+private const val THUMBNAIL_WIDTH_PX = 384
+private const val THUMBNAIL_HEIGHT_PX = 240
+
 /** Mjuk platshållare som visas medan tumnageln laddas. */
 @Composable
 fun ShimmerBox(modifier: Modifier = Modifier) {
@@ -128,7 +131,12 @@ fun Thumbnail(
         }
 
         AsyncImage(
-            model = ImageRequest.Builder(context).data(url).crossfade(true).build(),
+            // Fast storlek: undviker att dekoda fullskaliga bilder för små tumnaglar.
+            model = ImageRequest.Builder(context)
+                .data(url)
+                .size(THUMBNAIL_WIDTH_PX, THUMBNAIL_HEIGHT_PX)
+                .crossfade(true)
+                .build(),
             contentDescription = contentDescription,
             contentScale = ContentScale.Crop,
             onState = { newState -> state = newState },

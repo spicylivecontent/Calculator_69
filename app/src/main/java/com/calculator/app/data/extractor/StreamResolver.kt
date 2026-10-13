@@ -56,6 +56,11 @@ object StreamResolver {
         cache[detailUrl] = CacheEntry(stream, System.currentTimeMillis() + CACHE_TTL_MS)
     }
 
+    /** Tömmer hela strömcachen (används vid panik/lås). */
+    fun clearCache() {
+        cache.clear()
+    }
+
     fun invalidate(detailUrl: String? = null) {
         if (detailUrl == null) cache.clear() else cache.remove(detailUrl)
     }
