@@ -76,6 +76,10 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
+    // SQLCipher – kryptering av hela databasfilen
+    implementation(variantOf(libs.sqlcipher.android) { artifactType("aar") })
+    implementation(libs.androidx.sqlite)
+
     // Media3 / ExoPlayer
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)

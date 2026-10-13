@@ -5,6 +5,11 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import com.calculator.app.data.AppDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Applikationsklass som ställer in bildhanteringen en gång för hela appen.
@@ -12,16 +17,29 @@ import coil.memory.MemoryCache
  * Tumnaglar kan bli många (60+ per sökning), så minnes- och diskcachen har fasta
  * gränser i stället för att växa fritt – det håller nere både minnesanvändning och
  * batteriförbrukning när listor scrollas.
+ *
+ * Vid start flyttas också innehållet från en tidigare okrypterad databas till den
+ * krypterade, en gång, i bakgrunden.
  */
 class CalculatorApp : Application(), ImageLoaderFactory {
 
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    override fun onCreate() {
+        super.onCreate()
+        // Engångsflytt av gammalt innehåll till den krypterade databasen. Misslyckas den
+        // lämnas originalfilen kvar och appen fortsätter som vanligt.
+        applicationScope.launch {
+            runCatching { AppDatabase.migrateLegacyIfNeeded(applicationContext) }
+        }
+    }
+
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
-            // Max 20 % av appens tillgängliga minne, minst 8 MB.
+            // Max 20 % av appens tillgängliga minne (Coil räknar upp det själv).
             .memoryCache {
                 MemoryCache.Builder(this)
                     .maxSizePercent(0.20)
-                    .minSizeBytes(8L * 1024 * 1024)
                     .build()
             }
             .diskCache {
