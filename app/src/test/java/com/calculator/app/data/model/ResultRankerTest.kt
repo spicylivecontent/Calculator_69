@@ -227,4 +227,35 @@ class ResultRankerTest {
 
         assertEquals(listOf("b", "c", "a"), ResultRanker.applySort(listOf(b, a, c), SortOrder.SITE).map { it.id })
     }
+
+    @Test
+    fun hybridSemanticRankingBoostsMatchingConceptsAndComments() {
+        val generic = result(
+            id = "generic",
+            title = "Random beach clip",
+            playability = Playability.PLAYABLE,
+            tags = listOf("beach")
+        )
+        val semanticHit = SearchResult(
+            id = "semantic",
+            title = "Hispanic beauty by herself",
+            thumbnailUrl = null,
+            duration = "14:20",
+            detailUrl = "https://example.com/semantic",
+            sourceSite = "eporner",
+            playability = Playability.PLAYABLE,
+            tags = listOf("backdoor"),
+            performers = listOf("Maria Lopez"),
+            categories = listOf("Solo"),
+            description = "Continuous marathon session",
+            comments = listOf("12:10 nonstop ass to mouth scene is amazing"),
+            tagCount = 3
+        )
+
+        val terms = listOf("latina", "solo", "anal", "nonstop", "atm")
+        val ranked = ResultRanker.rank(listOf(generic, semanticHit), terms)
+
+        assertEquals("semantic", ranked.first().id)
+        assertTrue(ResultRanker.semanticScoreFor(semanticHit, terms) > 30)
+    }
 }

@@ -24,6 +24,8 @@ object MetadataExtractor {
 
     private const val MAX_DESCRIPTION_CHARS = 1_500
     private const val MAX_KEYWORDS = 40
+    private const val MAX_COMMENTS = 25
+    private const val MAX_COMMENT_CHARS = 240
 
     /** Hämtar och tolkar detaljsidan. Null om sidan inte svarar alls. */
     suspend fun fetch(
@@ -97,6 +99,8 @@ object MetadataExtractor {
             selectText(doc, VIEW_SELECTORS)
         )?.let { cleanText(it, 40) }
 
+        val comments = extractTopComments(doc, structured)
+
         return VideoMetadata(
             detailUrl = detailUrl,
             title = title?.let { cleanText(it, 200) },
@@ -104,6 +108,7 @@ object MetadataExtractor {
             tags = tags.distinctKeywords(MAX_KEYWORDS),
             performers = performers.distinctKeywords(MAX_KEYWORDS),
             categories = categories.distinctKeywords(MAX_KEYWORDS),
+            comments = comments,
             qualityLabel = height?.let { StreamSelection.qualityLabel(it) },
             durationSeconds = durationSeconds,
             uploadDate = uploadDate,
@@ -239,6 +244,73 @@ object MetadataExtractor {
             .distinctBy { it.lowercase(Locale.ROOT) }
             .take(limit)
 
+    /**
+     * Skrapar toppkommentarerna (upp till [MAX_COMMENTS]) från strukturerad JSON-LD,
+     * kommentarscontainrar i DOM:en samt inbäddad kommentarsdata i skriptblock.
+     */
+    private fun extractTopComments(doc: Document, structured: Map<String, Any?>?): List<String> {
+        val collected = mutableListOf<String>()
+
+        // 1. Strukturerad data (schema.org comment / commentText)
+        val rawComments = structured?.get("comment")
+        when (rawComments) {
+            is Map<*, *> -> {
+                val text = MiniJson.string(rawComments["text"]) ?: MiniJson.string(rawComments["commentText"])
+                if (text != null) collected.add(text)
+            }
+            is List<*> -> {
+                for (item in rawComments) {
+                    val map = item as? Map<*, *> ?: continue
+                    val text = MiniJson.string(map["text"]) ?: MiniJson.string(map["commentText"])
+                    if (text != null) collected.add(text)
+                    if (collected.size >= MAX_COMMENTS * 2) break
+                }
+            }
+        }
+
+        // 2. HTML-kommentarselement
+        for (selector in COMMENT_SELECTORS) {
+            for (element in doc.select(selector)) {
+                val text = element.text().trim()
+                if (text.isNotEmpty()) {
+                    collected.add(text)
+                    if (collected.size >= MAX_COMMENTS * 3) break
+                }
+            }
+            if (collected.size >= MAX_COMMENTS * 3) break
+        }
+
+        // 3. Inbäddade JSON-kommentarer i skriptblock (vanligt på bl.a. XVideos, xHamster, SpankBang)
+        if (collected.size < MAX_COMMENTS) {
+            for (script in doc.select("script")) {
+                val data = script.data()
+                if (data.length < 20 || !data.contains("comment", ignoreCase = true)) continue
+                for (match in SCRIPT_COMMENT_REGEX.findAll(data)) {
+                    val raw = match.groupValues.getOrNull(1)?.trim().orEmpty()
+                    if (raw.isNotEmpty()) {
+                        collected.add(raw.replace("\\\"", "\"").replace("\\n", " "))
+                        if (collected.size >= MAX_COMMENTS * 3) break
+                    }
+                }
+                if (collected.size >= MAX_COMMENTS * 3) break
+            }
+        }
+
+        return collected
+            .map { cleanText(it, MAX_COMMENT_CHARS) }
+            .filter { isUsableComment(it) }
+            .distinctBy { it.lowercase(Locale.ROOT) }
+            .take(MAX_COMMENTS)
+    }
+
+    private fun isUsableComment(text: String): Boolean {
+        if (text.length !in 4..MAX_COMMENT_CHARS) return false
+        val lower = text.lowercase(Locale.ROOT)
+        if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("www.")) return false
+        if (lower in COMMENT_BOILERPLATE) return false
+        return text.any { it.isLetter() }
+    }
+
     private fun detectHeight(doc: Document, title: String?, description: String?): Int? {
         val candidates = listOf(
             metaContent(doc, "meta[property=og:video:height]"),
@@ -340,6 +412,37 @@ object MetadataExtractor {
     private val TAG_HREFS = listOf("/tag/", "/tags/", "/tag?", "tag=", "/keyword", "/niche")
     private val PERFORMER_HREFS = listOf("/pornstar", "/pornstars", "/model/", "/models/", "/actress", "/performer")
     private val CATEGORY_HREFS = listOf("/category", "/categories", "/channel", "/channels", "/genre")
+
+    private val COMMENT_SELECTORS = listOf(
+        "[itemprop=commentText]",
+        "[itemprop=comment] [itemprop=text]",
+        ".comment-text",
+        ".comment_text",
+        ".comment-body",
+        ".comment-content",
+        ".comment-message",
+        ".cmt-text",
+        ".user-comment",
+        "[class*=comment-text]",
+        "[class*=comment_text]",
+        "[class*=commentBody]",
+        "[class*=comment-content]",
+        "#comments .comment p",
+        ".comments .comment p",
+        ".comments-list .comment p"
+    )
+
+    private val SCRIPT_COMMENT_REGEX = Regex(
+        """"(?:comment(?:Text|_text|_body)?|comment_message)"\s*:\s*"([^"\\]{4,240})"""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val COMMENT_BOILERPLATE = setOf(
+        "write a comment", "add a comment", "post a comment", "post comment",
+        "log in to comment", "login to comment", "sign in to comment",
+        "load more comments", "show more comments", "no comments yet",
+        "skriv en kommentar", "inga kommentarer"
+    )
 
     private val NAVIGATION_WORDS = setOf(
         "home", "login", "log in", "sign up", "signup", "register", "upload", "videos", "video",

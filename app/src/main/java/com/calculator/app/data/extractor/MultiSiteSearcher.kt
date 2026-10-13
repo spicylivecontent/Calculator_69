@@ -177,7 +177,10 @@ class MultiSiteSearcher(
                         metadata.pageMissing -> candidate.copy(
                             playability = Playability.UNPLAYABLE,
                             tags = metadata.tags,
+                            performers = metadata.performers,
+                            categories = metadata.categories,
                             description = metadata.description,
+                            comments = metadata.comments,
                             tagCount = metadata.keywords.size
                         )
 
@@ -186,7 +189,10 @@ class MultiSiteSearcher(
                             candidate.copy(
                                 title = metadata.title ?: candidate.title,
                                 tags = metadata.keywords,
+                                performers = metadata.performers,
+                                categories = metadata.categories,
                                 description = metadata.description,
+                                comments = metadata.comments,
                                 tagCount = metadata.keywords.size,
                                 qualityLabel = metadata.qualityLabel ?: candidate.qualityLabel,
                                 durationSeconds = metadata.durationSeconds ?: candidate.durationSeconds,

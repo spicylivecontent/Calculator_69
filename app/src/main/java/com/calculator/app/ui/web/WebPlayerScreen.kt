@@ -19,11 +19,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,28 +32,21 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.FastForward
-import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,11 +63,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -88,17 +75,15 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.calculator.app.data.extractor.MiniJson
 import com.calculator.app.data.extractor.SiteUrlPolicy
 import com.calculator.app.data.model.SearchResult
-import com.calculator.app.ui.components.TagChip
+import com.calculator.app.ui.theme.VaultPink
 import kotlinx.coroutines.delay
 import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Spelar upp videon på sajten i en WebView med appens egen annonsblockering,
- * popup-skydd och omdirigeringsskydd – i stället för att extrahera en stream-URL.
- *
- * Blockerade förfrågningar räknas och visas i spelaren, och små injicerade
- * hjälpfunktioner ger samma spol- och pausmöjligheter som den inbyggda spelaren.
+ * Spelar upp videon direkt i helskärm på sajten i en WebView med appens egen
+ * annonsblockering, popup-skydd och omdirigeringsskydd – utan överliggande
+ * dubblettspelare och med en liten knapp för att spara i favoriter medan filmen spelas.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -116,6 +101,8 @@ fun WebPlayerScreen(
     hasPrevious: Boolean = false,
     onNext: (() -> Unit)? = null,
     onPrevious: (() -> Unit)? = null,
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
     onProgress: (String, Long, Long) -> Unit = { _, _, _ -> },
     onSearchTag: (String) -> Unit = {},
     onOpenNativePlayer: ((SearchResult) -> Unit)? = null
@@ -125,37 +112,22 @@ fun WebPlayerScreen(
     val view = LocalView.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val currentResult by rememberUpdatedState(result)
-    val currentOnSearchTag by rememberUpdatedState(onSearchTag)
     val isInitialUrlTrusted = remember(result.id, result.detailUrl, trustedSiteBaseUrl) {
         SiteUrlPolicy.isSameSiteHttps(result.detailUrl, trustedSiteBaseUrl)
     }
 
-    var showControls by remember { mutableStateOf(true) }
-    var isPlaying by remember { mutableStateOf(true) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var isLoading by remember { mutableStateOf(true) }
     var loadProgress by remember { mutableIntStateOf(0) }
     var blockedCount by remember { mutableIntStateOf(0) }
-    var blockingActive by remember { mutableStateOf(true) }
     var currentUrl by remember(result.id) { mutableStateOf("") }
     var resumePositionMs by remember(result.id) { mutableLongStateOf(startPositionMs.coerceAtLeast(0L)) }
     var notice by remember { mutableStateOf<String?>(null) }
     var hasError by remember { mutableStateOf(false) }
-    var videoReady by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var resumeApplied by remember { mutableStateOf(false) }
     val webHost = remember(result.id) { WebPlayerHost(context) }
-    val fullscreenState = remember(result.id) { mutableStateOf(false) }
-    val isFullscreen by fullscreenState
-
-    DisposableEffect(webHost, fullscreenState) {
-        webHost.onFullscreenChanged = { fullscreen ->
-            fullscreenState.value = fullscreen
-            showControls = !fullscreen
-        }
-        onDispose { webHost.onFullscreenChanged = null }
-    }
 
     val blockedCounter = remember(result.id) { AtomicInteger(0) }
     val levelHolder = remember { arrayOf(adBlockLevel) }
@@ -189,6 +161,8 @@ fun WebPlayerScreen(
                 javaScriptCanOpenWindowsAutomatically = false
                 setSupportMultipleWindows(true)
                 loadsImagesAutomatically = true
+                useWideViewPort = true
+                loadWithOverviewMode = true
                 mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 cacheMode = WebSettings.LOAD_DEFAULT
                 allowFileAccess = false
@@ -258,6 +232,7 @@ fun WebPlayerScreen(
                     }?.let { currentUrl = it }
                     isLoading = true
                     hasError = false
+                    view?.evaluateJavascript(WebAdBlock.injectionScript(levelHolder[0]), null)
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
@@ -287,6 +262,9 @@ fun WebPlayerScreen(
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
                     loadProgress = newProgress
+                    if (newProgress >= 20) {
+                        view?.evaluateJavascript(WebAdBlock.injectionScript(levelHolder[0]), null)
+                    }
                     if (newProgress >= 100) isLoading = false
                 }
 
@@ -307,7 +285,6 @@ fun WebPlayerScreen(
                 }
 
                 // HTML5 players provide their fullscreen surface through these callbacks.
-                // The WebView's default WebChromeClient implementation does not display it.
                 override fun onShowCustomView(
                     view: View?,
                     callback: WebChromeClient.CustomViewCallback?
@@ -318,6 +295,7 @@ fun WebPlayerScreen(
 
                 override fun onHideCustomView() {
                     webHost.hideCustomView()
+                    evaluateJavascript("if(window.__pcFullscreen){window.__pcFullscreen();}", null)
                 }
             }
 
@@ -348,7 +326,6 @@ fun WebPlayerScreen(
     LaunchedEffect(result.id, result.detailUrl, webView, isInitialUrlTrusted) {
         isLoading = isInitialUrlTrusted
         hasError = !isInitialUrlTrusted
-        videoReady = false
         resumeApplied = false
         resumePositionMs = startPositionMs.coerceAtLeast(0L)
         positionMs = 0L
@@ -371,7 +348,6 @@ fun WebPlayerScreen(
             resumeApplied = false
             webView.reload()
         }
-        blockingActive = adBlockLevel != AdBlockLevel.OFF
         webView.evaluateJavascript(WebAdBlock.injectionScript(adBlockLevel), null)
     }
 
@@ -382,16 +358,13 @@ fun WebPlayerScreen(
             webView.evaluateJavascript("window.__pcState()") { value ->
                 val state = parsePlayerState(value)
                 if (state != null) {
-                    videoReady = state.duration > 0.0
                     positionMs = (state.position * 1_000.0).toLong()
                     durationMs = (state.duration * 1_000.0).toLong()
-                    isPlaying = !state.paused
                     if (tick % SAVE_EVERY_TICKS == 0 && durationMs > 0L) {
                         onProgress(currentResult.id, positionMs, durationMs)
                     }
                 }
                 blockedCount = blockedCounter.get()
-                blockingActive = levelHolder[0] != AdBlockLevel.OFF
             }
             tick++
             delay(POLL_INTERVAL_MS)
@@ -405,226 +378,131 @@ fun WebPlayerScreen(
         }
     }
 
-    LaunchedEffect(showControls, isPlaying, hasError) {
-        if (showControls && isPlaying && !hasError) {
-            delay(CONTROLS_HIDE_MS)
-            showControls = false
-        }
-    }
-
     DisposableEffect(Unit) {
         onDispose {
             if (durationMs > 0L) onProgress(currentResult.id, positionMs, durationMs)
         }
     }
 
+    // När man backar lämnar man direkt videon och kommer tillbaka till appen.
     BackHandler {
-        when {
-            webHost.isShowingCustomView -> webHost.hideCustomView()
-            webView.canGoBack() -> webView.goBack()
-            else -> onBack()
+        if (webHost.isShowingCustomView) {
+            webHost.hideCustomView()
         }
+        onBack()
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(gesturesEnabled, skipSeconds, isFullscreen) {
-                // Let the site's native HTML5 fullscreen controls receive every touch.
-                if (isFullscreen) return@pointerInput
-                detectTapGestures(
-                    onTap = { showControls = !showControls },
-                    onDoubleTap = doubleTap@{ offset ->
-                        if (!gesturesEnabled) return@doubleTap
-                        // Knapparna sköter spolningen; dubbeltryck visar bara kontrollerna.
-                        showControls = true
-                        if (offset.x < size.width * 0.5f) {
-                            webView.evaluateJavascript("window.__pcSeekBy(-$skipSeconds)", null)
-                        } else {
-                            webView.evaluateJavascript("window.__pcSeekBy($skipSeconds)", null)
-                        }
-                    }
-                )
-            }
     ) {
         AndroidView(factory = { webHost }, modifier = Modifier.fillMaxSize())
 
-        if (!isFullscreen) {
-            if (isLoading) {
-                LinearProgressIndicator(
-                    progress = { (loadProgress / 100f).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().height(3.dp).align(Alignment.TopCenter),
-                    color = Color(0xFF00E676),
-                    trackColor = Color.Transparent
-                )
-            }
+        if (isLoading) {
+            LinearProgressIndicator(
+                progress = { (loadProgress / 100f).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(2.dp).align(Alignment.TopCenter),
+                color = Color(0xFF00E676),
+                trackColor = Color.Transparent
+            )
+        }
 
-            AnimatedVisibility(
-                visible = showControls,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.TopCenter)
+        // Liten diskret knapp i hörnet för att spara i favoriter + meny för inställningar medan filmen spelas.
+        WebFloatingActions(
+            isFavorite = isFavorite,
+            blockedCount = blockedCount,
+            adBlockLevel = adBlockLevel,
+            showMenu = showMenu,
+            hasPrevious = hasPrevious && onPrevious != null,
+            hasNext = hasNext && onNext != null,
+            hasNativePlayer = onOpenNativePlayer != null,
+            onToggleFavorite = {
+                notice = if (isFavorite) "Borttagen ur favoriter" else "Sparad i favoriter"
+                onToggleFavorite()
+            },
+            onToggleMenu = { showMenu = !showMenu },
+            onPrevious = {
+                showMenu = false
+                onPrevious?.invoke()
+            },
+            onNext = {
+                showMenu = false
+                onNext?.invoke()
+            },
+            onReload = {
+                showMenu = false
+                if (positionMs > 0L) resumePositionMs = positionMs
+                resumeApplied = false
+                webView.reload()
+            },
+            onOpenInBrowser = {
+                showMenu = false
+                openInBrowser(context, currentUrl, notice = { notice = it })
+            },
+            onSelectAdBlockLevel = { level ->
+                onAdBlockLevelChange(level)
+                showMenu = false
+            },
+            onShowSiteControls = {
+                webView.evaluateJavascript("window.__pcControls(true)", null)
+                notice = "Webbläsarens videokontroller påslagna"
+                showMenu = false
+            },
+            onOpenNative = {
+                showMenu = false
+                onOpenNativePlayer?.invoke(result)
+            },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 8.dp, end = 8.dp)
+        )
+
+        notice?.let { text ->
+            Text(
+                text = text,
+                color = Color.White,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 64.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.Black.copy(alpha = 0.78f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+        }
+
+        if (hasError) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(24.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xE6171717))
+                    .padding(18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                WebTopBar(
-                    result = result,
-                    currentUrl = currentUrl,
-                    blockedCount = blockedCount,
-                    adBlockLevel = adBlockLevel,
-                    showMenu = showMenu,
-                    hasNativePlayer = onOpenNativePlayer != null,
-                    onBack = onBack,
-                    onToggleMenu = { showMenu = !showMenu },
-                    onReload = {
+                Text("Sidan kunde inte laddas", color = Color.White, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Kontrollera anslutningen eller öppna videon i webbläsaren.",
+                    color = Color(0xFFB0BEC5),
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = {
+                        hasError = false
                         if (positionMs > 0L) resumePositionMs = positionMs
                         resumeApplied = false
                         webView.reload()
-                    },
-                    onOpenInBrowser = { openInBrowser(context, currentUrl, notice = { notice = it }) },
-                    onSelectAdBlockLevel = { level ->
-                        onAdBlockLevelChange(level)
-                        showMenu = false
-                    },
-                    onShowSiteControls = {
-                        webView.evaluateJavascript("window.__pcControls(true)", null)
-                        notice = "Webbläsarens videokontroller påslagna"
-                        showMenu = false
-                    },
-                    onSearchTag = { tag ->
-                        currentOnSearchTag(tag)
-                        showMenu = false
-                    },
-                    onOpenNative = {
-                        showMenu = false
-                        onOpenNativePlayer?.invoke(result)
+                    }) {
+                        Text("Försök igen", color = Color(0xFF80CBC4))
                     }
-                )
-            }
-
-            AnimatedVisibility(
-                visible = showControls,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.Center)
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (hasPrevious && onPrevious != null) {
-                        IconButton(
-                            onClick = onPrevious,
-                            modifier = Modifier.size(48.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.FastRewind, contentDescription = "Föregående video", tint = Color.White)
-                        }
-                    }
-
-                    IconButton(
-                        onClick = {
-                            webView.evaluateJavascript("window.__pcSeekBy(-$skipSeconds)", null)
-                        },
-                        enabled = videoReady,
-                        modifier = Modifier.size(58.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    ) {
-                        Icon(Icons.Default.FastRewind, contentDescription = "Tillbaka $skipSeconds sekunder", tint = Color.White)
-                    }
-
-                    IconButton(
-                        onClick = {
-                            webView.evaluateJavascript("window.__pcToggle()", null)
-                        },
-                        enabled = videoReady,
-                        modifier = Modifier.size(76.dp).background(Color.Black.copy(alpha = 0.62f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pausa" else "Spela",
-                            tint = Color.White,
-                            modifier = Modifier.size(42.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            webView.evaluateJavascript("window.__pcSeekBy($skipSeconds)", null)
-                        },
-                        enabled = videoReady,
-                        modifier = Modifier.size(58.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    ) {
-                        Icon(Icons.Default.FastForward, contentDescription = "Framåt $skipSeconds sekunder", tint = Color.White)
-                    }
-
-                    if (hasNext && onNext != null) {
-                        IconButton(
-                            onClick = onNext,
-                            modifier = Modifier.size(48.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.FastForward, contentDescription = "Nästa video", tint = Color.White)
-                        }
-                    }
-                }
-            }
-
-            AnimatedVisibility(
-                visible = showControls,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter)
-            ) {
-                WebBottomBar(
-                    positionMs = positionMs,
-                    durationMs = durationMs,
-                    blockedCount = blockedCount,
-                    blockingActive = blockingActive
-                )
-            }
-
-            notice?.let { text ->
-                Text(
-                    text = text,
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
-                        .padding(bottom = 74.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color.Black.copy(alpha = 0.78f))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                )
-            }
-
-            if (hasError) {
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(24.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xE6171717))
-                        .padding(18.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("Sidan kunde inte laddas", color = Color.White, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Kontrollera anslutningen eller öppna videon i webbläsaren.",
-                        color = Color(0xFFB0BEC5),
-                        fontSize = 12.sp
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = {
-                            hasError = false
-                            if (positionMs > 0L) resumePositionMs = positionMs
-                            resumeApplied = false
-                            webView.reload()
-                        }) {
-                            Text("Försök igen", color = Color(0xFF80CBC4))
-                        }
-                        TextButton(onClick = { openInBrowser(context, currentUrl, notice = { notice = it }) }) {
-                            Text("Öppna i webbläsare", color = Color.White)
-                        }
+                    TextButton(onClick = { openInBrowser(context, currentUrl, notice = { notice = it }) }) {
+                        Text("Öppna i webbläsare", color = Color.White)
                     }
                 }
             }
@@ -633,187 +511,124 @@ fun WebPlayerScreen(
 }
 
 @Composable
-private fun WebTopBar(
-    result: SearchResult,
-    currentUrl: String,
+private fun WebFloatingActions(
+    isFavorite: Boolean,
     blockedCount: Int,
     adBlockLevel: AdBlockLevel,
     showMenu: Boolean,
+    hasPrevious: Boolean,
+    hasNext: Boolean,
     hasNativePlayer: Boolean,
-    onBack: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onToggleMenu: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
     onReload: () -> Unit,
     onOpenInBrowser: () -> Unit,
     onSelectAdBlockLevel: (AdBlockLevel) -> Unit,
     onShowSiteControls: () -> Unit,
-    onSearchTag: (String) -> Unit,
-    onOpenNative: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.72f))
-            .statusBarsPadding()
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Tillbaka", tint = Color.White)
-            }
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                Text(
-                    text = result.title,
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = buildString {
-                        append(result.siteLabel)
-                        result.qualityLabel?.let { append("  ·  $it") }
-                        result.durationLabel?.let { append("  ·  $it") }
-                        if (blockedCount > 0) append("  ·  $blockedCount blockerade")
-                    },
-                    color = Color(0xFFB0BEC5),
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            if (blockedCount > 0) {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF10331F))
-                        .padding(horizontal = 6.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Block, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(12.dp))
-                    Spacer(Modifier.width(3.dp))
-                    Text("$blockedCount", color = Color(0xFF00E676), fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-
-            Box {
-                IconButton(onClick = onToggleMenu) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Mer", tint = Color.White)
-                }
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = onToggleMenu
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Ladda om sidan") },
-                        leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
-                        onClick = onReload
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Öppna i webbläsare") },
-                        leadingIcon = { Icon(Icons.Default.OpenInNew, contentDescription = null) },
-                        onClick = onOpenInBrowser
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Visa videokontroller") },
-                        leadingIcon = { Icon(Icons.Default.Speed, contentDescription = null) },
-                        onClick = onShowSiteControls
-                    )
-                    if (hasNativePlayer) {
-                        DropdownMenuItem(
-                            text = { Text("Direktuppspelning (beta)") },
-                            onClick = onOpenNative
-                        )
-                    }
-                    Text(
-                        text = "Annonsblockering: ${adBlockLevel.label}",
-                        color = Color(0xFF98A2B3),
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 2.dp)
-                    )
-                    AdBlockLevel.entries.forEach { level ->
-                        DropdownMenuItem(
-                            text = { Text(level.label) },
-                            onClick = { onSelectAdBlockLevel(level) }
-                        )
-                    }
-                }
-            }
-        }
-
-        if (result.tags.isNotEmpty()) {
-            LazyRow(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                items(result.tags.take(18), key = { it }) { tag ->
-                    TagChip(text = tag, selected = false, onClick = { onSearchTag(tag) })
-                }
-            }
-        }
-
-        if (result.description != null) {
-            Text(
-                text = result.description,
-                color = Color(0xFF98A2B3),
-                fontSize = 11.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun WebBottomBar(
-    positionMs: Long,
-    durationMs: Long,
-    blockedCount: Int,
-    blockingActive: Boolean
+    onOpenNative: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.62f))
-            .navigationBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.Black.copy(alpha = 0.52f))
+            .padding(horizontal = 4.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = formatClock(positionMs), color = Color.White, fontSize = 12.sp)
-        Spacer(Modifier.width(10.dp))
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(4.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(Color.White.copy(alpha = 0.2f))
+        IconButton(
+            onClick = onToggleFavorite,
+            modifier = Modifier.size(34.dp)
         ) {
-            if (durationMs > 0L) {
-                val fraction = (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(fraction)
-                        .height(4.dp)
-                        .background(Color(0xFF00E676))
+            Icon(
+                imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                contentDescription = if (isFavorite) "Ta bort från favoriter" else "Spara i favoriter",
+                tint = if (isFavorite) VaultPink else Color.White,
+                modifier = Modifier.size(19.dp)
+            )
+        }
+
+        Box {
+            IconButton(
+                onClick = onToggleMenu,
+                modifier = Modifier.size(34.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "Mer",
+                    tint = Color.White,
+                    modifier = Modifier.size(19.dp)
                 )
             }
-        }
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = if (durationMs > 0L) formatClock(durationMs) else "—",
-            color = Color(0xFFB0BEC5),
-            fontSize = 12.sp
-        )
-        if (blockingActive) {
-            Spacer(Modifier.width(10.dp))
-            Icon(Icons.Default.Block, contentDescription = "Annonsblockering på", tint = Color(0xFF00E676), modifier = Modifier.size(14.dp))
-            if (blockedCount > 0) {
-                Spacer(Modifier.width(3.dp))
-                Text("$blockedCount", color = Color(0xFF00E676), fontSize = 11.sp)
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = onToggleMenu
+            ) {
+                DropdownMenuItem(
+                    text = { Text(if (isFavorite) "Ta bort från favoriter" else "Spara i favoriter") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = null,
+                            tint = if (isFavorite) VaultPink else Color.Unspecified
+                        )
+                    },
+                    onClick = {
+                        onToggleMenu()
+                        onToggleFavorite()
+                    }
+                )
+                if (hasPrevious) {
+                    DropdownMenuItem(
+                        text = { Text("Föregående video") },
+                        leadingIcon = { Icon(Icons.Default.SkipPrevious, contentDescription = null) },
+                        onClick = onPrevious
+                    )
+                }
+                if (hasNext) {
+                    DropdownMenuItem(
+                        text = { Text("Nästa video") },
+                        leadingIcon = { Icon(Icons.Default.SkipNext, contentDescription = null) },
+                        onClick = onNext
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("Ladda om sidan") },
+                    leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                    onClick = onReload
+                )
+                DropdownMenuItem(
+                    text = { Text("Öppna i webbläsare") },
+                    leadingIcon = { Icon(Icons.Default.OpenInNew, contentDescription = null) },
+                    onClick = onOpenInBrowser
+                )
+                DropdownMenuItem(
+                    text = { Text("Visa videokontroller") },
+                    leadingIcon = { Icon(Icons.Default.Speed, contentDescription = null) },
+                    onClick = onShowSiteControls
+                )
+                if (hasNativePlayer) {
+                    DropdownMenuItem(
+                        text = { Text("Direktuppspelning (beta)") },
+                        onClick = onOpenNative
+                    )
+                }
+                Text(
+                    text = buildString {
+                        append("Annonsblockering: ${adBlockLevel.label}")
+                        if (blockedCount > 0) append(" ($blockedCount blockerade)")
+                    },
+                    color = Color(0xFF98A2B3),
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 2.dp)
+                )
+                AdBlockLevel.entries.forEach { level ->
+                    DropdownMenuItem(
+                        text = { Text(level.label) },
+                        onClick = { onSelectAdBlockLevel(level) }
+                    )
+                }
             }
         }
     }
@@ -858,18 +673,6 @@ private fun decodeJsString(raw: String?): String? {
     }
 }
 
-private fun formatClock(milliseconds: Long): String {
-    val totalSeconds = (milliseconds.coerceAtLeast(0L)) / 1_000L
-    val hours = totalSeconds / 3_600L
-    val minutes = (totalSeconds % 3_600L) / 60L
-    val seconds = totalSeconds % 60L
-    return if (hours > 0L) {
-        String.format(java.util.Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds)
-    } else {
-        String.format(java.util.Locale.ROOT, "%02d:%02d", minutes, seconds)
-    }
-}
-
 private fun openInBrowser(context: Context, url: String, notice: (String) -> Unit) {
     try {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
@@ -885,5 +688,4 @@ private const val WEB_USER_AGENT =
     "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 private const val POLL_INTERVAL_MS = 1_000L
 private const val SAVE_EVERY_TICKS = 5
-private const val CONTROLS_HIDE_MS = 4_500L
 private const val NOTICE_MS = 2_600L

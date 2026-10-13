@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.calculator.app.ai.AgeSafety
 import com.calculator.app.ai.SearchPlanner
+import com.calculator.app.ai.embedding.OnnxEmbeddingEngine
 import com.calculator.app.data.AppPreferences
 import com.calculator.app.data.PlaybackResumePolicy
 import com.calculator.app.data.PlaybackStore
@@ -94,11 +95,25 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var rulesMessage by mutableStateOf<String?>(null)
         private set
 
+    /** True när lokal AI-embedding-ranking är laddad och aktiv. */
+    var aiRankingActive by mutableStateOf(OnnxEmbeddingEngine.Default.isReady)
+        private set
+
     /** Persisted rules only; query-specific exclusions must not block saved videos. */
     private var dislikedWords: List<String> = emptyList()
     private var dislikeRulesLoaded = false
 
     init {
+        // Ladda eventuell nedladdad lokal ONNX/embedding-modell i bakgrunden.
+        viewModelScope.launch(Dispatchers.IO) {
+            val modelFile = java.io.File(getApplication<Application>().filesDir, "ai_models/bge-small-quant.bin")
+            if (modelFile.exists()) {
+                OnnxEmbeddingEngine.Default.loadModelFile(modelFile)
+            }
+            withContext(Dispatchers.Main) {
+                aiRankingActive = OnnxEmbeddingEngine.Default.isReady && ResultRanker.semanticEnabled
+            }
+        }
         // Uppdaterade regler hämtas i bakgrunden (högst en gång i dygnet) och slår igenom
         // först när de finns – en långsam hämtning får aldrig fördröja en sökning.
         viewModelScope.launch {
@@ -451,6 +466,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         queue = emptyList()
         queueIndex = 0
         StreamResolver.clearCache()
+        OnnxEmbeddingEngine.Default.clearCache()
         playbackRevision++
     }
 

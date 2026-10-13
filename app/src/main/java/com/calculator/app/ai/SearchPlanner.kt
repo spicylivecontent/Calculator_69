@@ -390,11 +390,21 @@ class SearchPlanner {
             "avslut" to listOf("cumshot"),
             "avslutning" to listOf("cumshot"),
 
-            // Vanliga engelska lånord
+            // Vanliga engelska lånord & förkortningar
             "milf" to listOf("milf", "mature"),
             "mogen" to listOf("mature"),
             "pov" to listOf("pov", "point of view"),
-            "solo" to listOf("solo"),
+            "solo" to listOf("solo", "masturbation"),
+            "latina" to listOf("latina", "latin"),
+            "atm" to listOf("atm", "ass to mouth"),
+            "a2m" to listOf("atm", "ass to mouth"),
+            "ass to mouth" to listOf("ass to mouth", "atm"),
+            "nonstop" to listOf("nonstop", "continuous"),
+            "non stop" to listOf("nonstop", "continuous"),
+            "dp" to listOf("dp", "double penetration"),
+            "bj" to listOf("blowjob", "oral"),
+            "pawg" to listOf("pawg", "curvy"),
+            "creampie" to listOf("creampie"),
             "amateur" to listOf("amateur", "homemade"),
             "homemade" to listOf("homemade"),
             "outdoor" to listOf("outdoor"),

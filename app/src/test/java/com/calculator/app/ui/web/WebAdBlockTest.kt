@@ -149,4 +149,18 @@ class WebAdBlockTest {
         assertTrue(value.endsWith("\""))
         assertTrue(value.contains("\\\""))
     }
+
+    @Test
+    fun injectionScriptEnforcesFullscreenPlayerAndBlocksMinimizing() {
+        val script = WebAdBlock.injectionScript(AdBlockLevel.STANDARD)
+
+        assertTrue(script.contains("__pcFullscreen"))
+        assertTrue(script.contains("__pcPlayerRoot"))
+        assertTrue(script.contains("data-pc-player"))
+        assertTrue(script.contains("data-pc-locked"))
+        assertTrue(script.contains("exitFullscreen=noopFs"))
+        assertTrue(script.contains("webkitExitFullscreen=noopFs"))
+        assertTrue(script.contains("nofullscreen"))
+        assertTrue(script.contains(".vjs-fullscreen-control"))
+    }
 }
