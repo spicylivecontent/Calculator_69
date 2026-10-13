@@ -109,6 +109,23 @@ class ScrapeRuleTest {
     }
 
     @Test
+    fun searchTemplateMustStayOnTheDeclaredSourceSite() {
+        val json = """
+            { "version": 50, "sites": {
+              "spoofed": {
+                "baseUrl": "https://trusted.example",
+                "searchUrl": "https://attacker.example/search?q={query}"
+              }
+            } }
+        """.trimIndent()
+
+        val rules = ScrapeRules.parse(json)!!
+
+        assertNull(rules.forSite("spoofed"))
+        assertEquals(1, rules.rejected)
+    }
+
+    @Test
     fun anInvalidRegexOnlyDropsThatSite() {
         val json = """
             {

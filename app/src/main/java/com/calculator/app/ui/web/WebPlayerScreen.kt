@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.CookieManager
@@ -84,8 +85,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.calculator.app.data.model.SearchResult
 import com.calculator.app.data.extractor.MiniJson
+import com.calculator.app.data.extractor.SiteUrlPolicy
+import com.calculator.app.data.model.SearchResult
 import com.calculator.app.ui.components.TagChip
 import kotlinx.coroutines.delay
 import java.io.ByteArrayInputStream
@@ -102,6 +104,7 @@ import java.util.concurrent.atomic.AtomicInteger
 @Composable
 fun WebPlayerScreen(
     result: SearchResult,
+    trustedSiteBaseUrl: String?,
     onBack: () -> Unit,
     skipSeconds: Int = 10,
     keepScreenOn: Boolean = true,
@@ -123,6 +126,9 @@ fun WebPlayerScreen(
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val currentResult by rememberUpdatedState(result)
     val currentOnSearchTag by rememberUpdatedState(onSearchTag)
+    val isInitialUrlTrusted = remember(result.id, result.detailUrl, trustedSiteBaseUrl) {
+        SiteUrlPolicy.isSameSiteHttps(result.detailUrl, trustedSiteBaseUrl)
+    }
 
     var showControls by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(true) }
@@ -132,12 +138,24 @@ fun WebPlayerScreen(
     var loadProgress by remember { mutableIntStateOf(0) }
     var blockedCount by remember { mutableIntStateOf(0) }
     var blockingActive by remember { mutableStateOf(true) }
-    var currentUrl by remember { mutableStateOf(result.detailUrl) }
+    var currentUrl by remember(result.id) { mutableStateOf("") }
+    var resumePositionMs by remember(result.id) { mutableLongStateOf(startPositionMs.coerceAtLeast(0L)) }
     var notice by remember { mutableStateOf<String?>(null) }
     var hasError by remember { mutableStateOf(false) }
     var videoReady by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var resumeApplied by remember { mutableStateOf(false) }
+    val webHost = remember(result.id) { WebPlayerHost(context) }
+    val fullscreenState = remember(result.id) { mutableStateOf(false) }
+    val isFullscreen by fullscreenState
+
+    DisposableEffect(webHost, fullscreenState) {
+        webHost.onFullscreenChanged = { fullscreen ->
+            fullscreenState.value = fullscreen
+            showControls = !fullscreen
+        }
+        onDispose { webHost.onFullscreenChanged = null }
+    }
 
     val blockedCounter = remember(result.id) { AtomicInteger(0) }
     val levelHolder = remember { arrayOf(adBlockLevel) }
@@ -190,6 +208,17 @@ fun WebPlayerScreen(
                     request: WebResourceRequest?
                 ): WebResourceResponse? {
                     val url = request?.url?.toString()
+                    // Only the app uses about:blank during teardown; page-initiated
+                    // navigations are still rejected by shouldOverrideUrlLoading.
+                    if (url == "about:blank") return null
+                    if (request?.isForMainFrame == true &&
+                        WebAdBlock.navigationFor(result.detailUrl, url, levelHolder[0]) != NavigationDecision.ALLOW
+                    ) {
+                        // Navigation callbacks do not cover every redirect path. Intercept the
+                        // main-frame request too so an off-site redirect never reaches the network.
+                        blockedCounter.incrementAndGet()
+                        return emptyResponse()
+                    }
                     if (WebAdBlock.isBlockedRequest(url, levelHolder[0], result.detailUrl)) {
                         blockedCounter.incrementAndGet()
                         return emptyResponse()
@@ -224,6 +253,9 @@ fun WebPlayerScreen(
                 }
 
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    url?.takeIf {
+                        WebAdBlock.navigationFor(result.detailUrl, it, levelHolder[0]) == NavigationDecision.ALLOW
+                    }?.let { currentUrl = it }
                     isLoading = true
                     hasError = false
                 }
@@ -232,9 +264,9 @@ fun WebPlayerScreen(
                     isLoading = false
                     view?.let { target ->
                         target.evaluateJavascript(WebAdBlock.injectionScript(levelHolder[0]), null)
-                        if (startPositionMs > 15_000L && !resumeApplied) {
+                        if (resumePositionMs > 15_000L && !resumeApplied) {
                             resumeApplied = true
-                            val seconds = (startPositionMs / 1_000L).toString()
+                            val seconds = (resumePositionMs / 1_000L).toString()
                             target.evaluateJavascript("window.__pcResume($seconds)", null)
                         }
                     }
@@ -273,17 +305,29 @@ fun WebPlayerScreen(
                 override fun onPermissionRequest(request: PermissionRequest?) {
                     request?.deny()
                 }
+
+                // HTML5 players provide their fullscreen surface through these callbacks.
+                // The WebView's default WebChromeClient implementation does not display it.
+                override fun onShowCustomView(
+                    view: View?,
+                    callback: WebChromeClient.CustomViewCallback?
+                ) {
+                    if (view == null || callback == null) return
+                    webHost.showCustomView(view, callback)
+                }
+
+                override fun onHideCustomView() {
+                    webHost.hideCustomView()
+                }
             }
 
-            loadUrl(result.detailUrl)
+            webHost.attachWebView(this)
         }
     }
 
-    DisposableEffect(webView) {
+    DisposableEffect(webView, webHost) {
         onDispose {
-            webView.stopLoading()
-            webView.loadUrl("about:blank")
-            webView.destroy()
+            webHost.destroyWebView()
         }
     }
 
@@ -300,15 +344,22 @@ fun WebPlayerScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Ny video: nollställ statusen och läs in den nya sidan.
-    LaunchedEffect(result.id) {
-        isLoading = true
-        hasError = false
+    // Only start on an HTTPS detail URL that belongs to the declared source site.
+    LaunchedEffect(result.id, result.detailUrl, webView, isInitialUrlTrusted) {
+        isLoading = isInitialUrlTrusted
+        hasError = !isInitialUrlTrusted
         videoReady = false
         resumeApplied = false
+        resumePositionMs = startPositionMs.coerceAtLeast(0L)
         positionMs = 0L
         durationMs = 0L
         blockedCount = 0
+        currentUrl = if (isInitialUrlTrusted) result.detailUrl else ""
+        if (isInitialUrlTrusted) {
+            webView.loadUrl(result.detailUrl)
+        } else {
+            notice = "Videoadressen avvisades eftersom den inte tillhör källsajten."
+        }
     }
 
     // Håll blockeringsnivån uppdaterad utan att skapa en ny WebView.
@@ -316,6 +367,7 @@ fun WebPlayerScreen(
         val changed = levelHolder[0] != adBlockLevel
         levelHolder[0] = adBlockLevel
         if (changed) {
+            if (positionMs > 0L) resumePositionMs = positionMs
             resumeApplied = false
             webView.reload()
         }
@@ -367,14 +419,20 @@ fun WebPlayerScreen(
     }
 
     BackHandler {
-        if (webView.canGoBack()) webView.goBack() else onBack()
+        when {
+            webHost.isShowingCustomView -> webHost.hideCustomView()
+            webView.canGoBack() -> webView.goBack()
+            else -> onBack()
+        }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(gesturesEnabled, skipSeconds) {
+            .pointerInput(gesturesEnabled, skipSeconds, isFullscreen) {
+                // Let the site's native HTML5 fullscreen controls receive every touch.
+                if (isFullscreen) return@pointerInput
                 detectTapGestures(
                     onTap = { showControls = !showControls },
                     onDoubleTap = doubleTap@{ offset ->
@@ -390,172 +448,183 @@ fun WebPlayerScreen(
                 )
             }
     ) {
-        AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize())
+        AndroidView(factory = { webHost }, modifier = Modifier.fillMaxSize())
 
-        if (isLoading) {
-            LinearProgressIndicator(
-                progress = { (loadProgress / 100f).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().height(3.dp).align(Alignment.TopCenter),
-                color = Color(0xFF00E676),
-                trackColor = Color.Transparent
-            )
-        }
+        if (!isFullscreen) {
+            if (isLoading) {
+                LinearProgressIndicator(
+                    progress = { (loadProgress / 100f).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(3.dp).align(Alignment.TopCenter),
+                    color = Color(0xFF00E676),
+                    trackColor = Color.Transparent
+                )
+            }
 
-        AnimatedVisibility(
-            visible = showControls,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.TopCenter)
-        ) {
-            WebTopBar(
-                result = result,
-                currentUrl = currentUrl,
-                blockedCount = blockedCount,
-                adBlockLevel = adBlockLevel,
-                showMenu = showMenu,
-                hasNativePlayer = onOpenNativePlayer != null,
-                onBack = onBack,
-                onToggleMenu = { showMenu = !showMenu },
-                onReload = { webView.reload() },
-                onOpenInBrowser = { openInBrowser(context, currentUrl, notice = { notice = it }) },
-                onSelectAdBlockLevel = { level ->
-                    onAdBlockLevelChange(level)
-                    showMenu = false
-                },
-                onShowSiteControls = {
-                    webView.evaluateJavascript("window.__pcControls(true)", null)
-                    notice = "Webbläsarens videokontroller påslagna"
-                    showMenu = false
-                },
-                onSearchTag = { tag ->
-                    currentOnSearchTag(tag)
-                    showMenu = false
-                },
-                onOpenNative = {
-                    showMenu = false
-                    onOpenNativePlayer?.invoke(result)
-                }
-            )
-        }
-
-        AnimatedVisibility(
-            visible = showControls,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(18.dp),
-                verticalAlignment = Alignment.CenterVertically
+            AnimatedVisibility(
+                visible = showControls,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter)
             ) {
-                if (hasPrevious && onPrevious != null) {
-                    IconButton(
-                        onClick = onPrevious,
-                        modifier = Modifier.size(48.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    ) {
-                        Icon(Icons.Default.FastRewind, contentDescription = "Föregående video", tint = Color.White)
+                WebTopBar(
+                    result = result,
+                    currentUrl = currentUrl,
+                    blockedCount = blockedCount,
+                    adBlockLevel = adBlockLevel,
+                    showMenu = showMenu,
+                    hasNativePlayer = onOpenNativePlayer != null,
+                    onBack = onBack,
+                    onToggleMenu = { showMenu = !showMenu },
+                    onReload = {
+                        if (positionMs > 0L) resumePositionMs = positionMs
+                        resumeApplied = false
+                        webView.reload()
+                    },
+                    onOpenInBrowser = { openInBrowser(context, currentUrl, notice = { notice = it }) },
+                    onSelectAdBlockLevel = { level ->
+                        onAdBlockLevelChange(level)
+                        showMenu = false
+                    },
+                    onShowSiteControls = {
+                        webView.evaluateJavascript("window.__pcControls(true)", null)
+                        notice = "Webbläsarens videokontroller påslagna"
+                        showMenu = false
+                    },
+                    onSearchTag = { tag ->
+                        currentOnSearchTag(tag)
+                        showMenu = false
+                    },
+                    onOpenNative = {
+                        showMenu = false
+                        onOpenNativePlayer?.invoke(result)
                     }
-                }
+                )
+            }
 
-                IconButton(
-                    onClick = {
-                        webView.evaluateJavascript("window.__pcSeekBy(-$skipSeconds)", null)
-                    },
-                    enabled = videoReady,
-                    modifier = Modifier.size(58.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
+            AnimatedVisibility(
+                visible = showControls,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.Center)
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.FastRewind, contentDescription = "Tillbaka $skipSeconds sekunder", tint = Color.White)
-                }
+                    if (hasPrevious && onPrevious != null) {
+                        IconButton(
+                            onClick = onPrevious,
+                            modifier = Modifier.size(48.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.FastRewind, contentDescription = "Föregående video", tint = Color.White)
+                        }
+                    }
 
-                IconButton(
-                    onClick = {
-                        webView.evaluateJavascript("window.__pcToggle()", null)
-                    },
-                    enabled = videoReady,
-                    modifier = Modifier.size(76.dp).background(Color.Black.copy(alpha = 0.62f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Pausa" else "Spela",
-                        tint = Color.White,
-                        modifier = Modifier.size(42.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = {
-                        webView.evaluateJavascript("window.__pcSeekBy($skipSeconds)", null)
-                    },
-                    enabled = videoReady,
-                    modifier = Modifier.size(58.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                ) {
-                    Icon(Icons.Default.FastForward, contentDescription = "Framåt $skipSeconds sekunder", tint = Color.White)
-                }
-
-                if (hasNext && onNext != null) {
                     IconButton(
-                        onClick = onNext,
-                        modifier = Modifier.size(48.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        onClick = {
+                            webView.evaluateJavascript("window.__pcSeekBy(-$skipSeconds)", null)
+                        },
+                        enabled = videoReady,
+                        modifier = Modifier.size(58.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
                     ) {
-                        Icon(Icons.Default.FastForward, contentDescription = "Nästa video", tint = Color.White)
+                        Icon(Icons.Default.FastRewind, contentDescription = "Tillbaka $skipSeconds sekunder", tint = Color.White)
+                    }
+
+                    IconButton(
+                        onClick = {
+                            webView.evaluateJavascript("window.__pcToggle()", null)
+                        },
+                        enabled = videoReady,
+                        modifier = Modifier.size(76.dp).background(Color.Black.copy(alpha = 0.62f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pausa" else "Spela",
+                            tint = Color.White,
+                            modifier = Modifier.size(42.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            webView.evaluateJavascript("window.__pcSeekBy($skipSeconds)", null)
+                        },
+                        enabled = videoReady,
+                        modifier = Modifier.size(58.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.FastForward, contentDescription = "Framåt $skipSeconds sekunder", tint = Color.White)
+                    }
+
+                    if (hasNext && onNext != null) {
+                        IconButton(
+                            onClick = onNext,
+                            modifier = Modifier.size(48.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.FastForward, contentDescription = "Nästa video", tint = Color.White)
+                        }
                     }
                 }
             }
-        }
 
-        AnimatedVisibility(
-            visible = showControls,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            WebBottomBar(
-                positionMs = positionMs,
-                durationMs = durationMs,
-                blockedCount = blockedCount,
-                blockingActive = blockingActive
-            )
-        }
-
-        notice?.let { text ->
-            Text(
-                text = text,
-                color = Color.White,
-                fontSize = 12.sp,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 74.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color.Black.copy(alpha = 0.78f))
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            )
-        }
-
-        if (hasError) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(24.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xE6171717))
-                    .padding(18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            AnimatedVisibility(
+                visible = showControls,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter)
             ) {
-                Text("Sidan kunde inte laddas", color = Color.White, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Kontrollera anslutningen eller öppna videon i webbläsaren.",
-                    color = Color(0xFFB0BEC5),
-                    fontSize = 12.sp
+                WebBottomBar(
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    blockedCount = blockedCount,
+                    blockingActive = blockingActive
                 )
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { hasError = false; webView.reload() }) {
-                        Text("Försök igen", color = Color(0xFF80CBC4))
-                    }
-                    TextButton(onClick = { openInBrowser(context, currentUrl, notice = { notice = it }) }) {
-                        Text("Öppna i webbläsare", color = Color.White)
+            }
+
+            notice?.let { text ->
+                Text(
+                    text = text,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 74.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.Black.copy(alpha = 0.78f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+
+            if (hasError) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(24.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xE6171717))
+                        .padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Sidan kunde inte laddas", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Kontrollera anslutningen eller öppna videon i webbläsaren.",
+                        color = Color(0xFFB0BEC5),
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = {
+                            hasError = false
+                            if (positionMs > 0L) resumePositionMs = positionMs
+                            resumeApplied = false
+                            webView.reload()
+                        }) {
+                            Text("Försök igen", color = Color(0xFF80CBC4))
+                        }
+                        TextButton(onClick = { openInBrowser(context, currentUrl, notice = { notice = it }) }) {
+                            Text("Öppna i webbläsare", color = Color.White)
+                        }
                     }
                 }
             }

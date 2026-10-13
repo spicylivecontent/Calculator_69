@@ -3,9 +3,9 @@ package com.calculator.app.security
 /**
  * Laddar SQLCiphers inbyggda bibliotek en gång.
  *
- * Biblioteket måste vara laddat innan databasen öppnas. Kan det inte laddas (till
- * exempel på en enhet där det inbyggda biblioteket saknas) returnerar [load] false och
- * appen faller tillbaka på en okrypterad databas i stället för att krascha.
+ * Biblioteket måste vara laddat innan databasen öppnas. Om det inte kan laddas
+ * returnerar [load] false; databasen ska då förbli stängd i stället för att falla
+ * tillbaka till en okrypterad fil.
  */
 internal object SqlCipherLoader {
 

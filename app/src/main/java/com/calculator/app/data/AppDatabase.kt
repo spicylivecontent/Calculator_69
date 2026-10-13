@@ -56,16 +56,13 @@ abstract class AppDatabase : RoomDatabase() {
             val passphrase = checkNotNull(VaultDatabaseKey.passphrase(context)) { "Vault key unavailable" }
             val plan = VaultDatabasePlan.layout(
                 encryptionAvailable = true,
-                encryptedExists = context.getDatabasePath(VaultDatabasePlan.ENCRYPTED_NAME).exists(),
                 plainExists = context.getDatabasePath(VaultDatabasePlan.PLAIN_NAME).exists()
             )
             layout = plan
 
-            val builder = Room.databaseBuilder(context, AppDatabase::class.java, plan.databaseName)
-            if (plan.encrypted) {
-                builder.openHelperFactory(SupportOpenHelperFactory(passphrase, null, true))
-            }
-            return builder.build()
+            return Room.databaseBuilder(context, AppDatabase::class.java, plan.databaseName)
+                .openHelperFactory(SupportOpenHelperFactory(passphrase, null, true))
+                .build()
         }
 
         /**

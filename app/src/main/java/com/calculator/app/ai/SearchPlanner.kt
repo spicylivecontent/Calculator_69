@@ -59,6 +59,15 @@ class SearchPlanner {
             .filter { it.isNotBlank() }
             .distinct()
 
+        if (maxQueries <= 0) {
+            return Plan(
+                queries = emptyList(),
+                negatives = negatives,
+                terms = emptyList(),
+                explanation = "Inga sökfrågor tillåts när maxQueries inte är positivt."
+            )
+        }
+
         val excluded = negatives.map { normalizeTerm(it) }.toSet()
         val positiveTerms = parsed.positives
             .map { canonicalTerm(it) }

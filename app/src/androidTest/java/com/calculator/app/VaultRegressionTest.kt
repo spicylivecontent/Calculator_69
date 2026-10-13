@@ -11,6 +11,7 @@ import com.calculator.app.data.PlaybackStore
 import com.calculator.app.data.entity.AppSettingsEntity
 import com.calculator.app.data.entity.SearchPresetEntity
 import com.calculator.app.data.entity.VideoEntity
+import com.calculator.app.data.model.SearchResult
 import com.calculator.app.data.extractor.ScrapeRuleStore
 import com.calculator.app.security.VaultDatabaseKey
 import kotlinx.coroutines.CancellationException
@@ -77,6 +78,36 @@ class VaultRegressionTest {
         assertEquals(0L, PlaybackStore(context).position("old"))
         assertFalse(prefs.contains("pos_old"))
         assertFalse(prefs.contains("dur_old"))
+    }
+
+    @Test
+    fun playbackPositionsArePrunedWithTheBoundedRecentHistory() {
+        val store = PlaybackStore(context)
+        store.clear()
+        try {
+            repeat(41) { index ->
+                val id = "video-$index"
+                store.savePlayed(
+                    SearchResult(
+                        id = id,
+                        title = "Video $index",
+                        thumbnailUrl = null,
+                        duration = null,
+                        detailUrl = "https://example.test/video/$index",
+                        sourceSite = "example"
+                    )
+                )
+                store.saveProgress(id, (index + 1L) * 1_000L, 120_000L)
+            }
+
+            assertEquals(40, store.recent().size)
+            assertEquals("the entry pruned from history has no resumable position", 0L, store.position("video-0"))
+            assertEquals(2_000L, store.position("video-1"))
+            store.saveProgress("not-in-history", 30_000L, 60_000L)
+            assertEquals(0L, store.position("not-in-history"))
+        } finally {
+            store.clear()
+        }
     }
 
     @Test

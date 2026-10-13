@@ -214,6 +214,9 @@ private fun VaultContent(
         androidx.compose.runtime.key(onSite.result.id) {
             WebPlayerScreen(
                 result = onSite.result,
+                trustedSiteBaseUrl = searchViewModel.siteInfos
+                    .firstOrNull { it.id == onSite.result.sourceSite }
+                    ?.baseUrl,
                 skipSeconds = searchViewModel.preferences.skipSeconds,
                 keepScreenOn = searchViewModel.preferences.keepScreenOn,
                 gesturesEnabled = searchViewModel.preferences.gestureSeeking,

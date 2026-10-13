@@ -1,10 +1,15 @@
 package com.calculator.app.data.extractor
 
 import com.calculator.app.data.model.VideoMetadata
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.After
@@ -14,6 +19,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.net.InetAddress
+import java.util.concurrent.TimeUnit
 
 /**
  * Kör hela kedjan mot en riktig (lokal) HTTPS-server: hämtning → HTML → träfflista →
@@ -32,6 +39,7 @@ class PipelineMockWebServerTest {
     fun startServer() {
         val certificate = HeldCertificate.Builder()
             .addSubjectAlternativeName("localhost")
+            .addSubjectAlternativeName("evil.test")
             .build()
         val serverCertificates = HandshakeCertificates.Builder()
             .heldCertificate(certificate)
@@ -46,6 +54,10 @@ class PipelineMockWebServerTest {
             .build()
         client = OkHttpClient.Builder()
             .sslSocketFactory(clientCertificates.sslSocketFactory(), clientCertificates.trustManager)
+            .dns(Dns { host ->
+                if (host == "evil.test") listOf(InetAddress.getByName("127.0.0.1"))
+                else Dns.SYSTEM.lookup(host)
+            })
             .build()
     }
 
@@ -105,6 +117,20 @@ class PipelineMockWebServerTest {
     fun oversizedChunkedBodyIsRejectedWithoutTruncatingItIntoValidHtml() {
         server.enqueue(MockResponse().setChunkedBody("x".repeat(6000001), 8192))
         assertNull(runBlocking { Fetch.page(server.url("/large").toString(), client = client, attempts = 1) })
+    }
+
+    @Test
+    fun cancellingAnInFlightFetchCancelsTheUnderlyingHttpCall() = runBlocking {
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        val job = launch(Dispatchers.IO) {
+            Fetch.page(server.url("/slow").toString(), client = client, attempts = 1)
+        }
+
+        assertNotNull("server should observe the request", server.takeRequest(2, TimeUnit.SECONDS))
+        job.cancelAndJoin()
+
+        assertTrue("fetch must stop promptly when its coroutine is cancelled", job.isCancelled)
+        assertEquals("cancellation must not start a retry", 1, server.requestCount)
     }
 
     @Test
@@ -215,6 +241,22 @@ class PipelineMockWebServerTest {
         assertNotNull("omdirigeringen ska följas", html)
         assertTrue(html!!.contains("blonde-in-the-kitchen-2024"))
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun crossSiteRedirectIsRejectedBeforeTheRedirectTargetIsRequested() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(302)
+                .setHeader("Location", "https://evil.test:${server.port}/outside")
+        )
+
+        val html = runBlocking {
+            Fetch.page(server.url("/redirect-off-site").toString(), client = client, attempts = 1)
+        }
+
+        assertNull("a detail-page fetch must stay on its source host", html)
+        assertEquals("only the original source URL may reach the server", 1, server.requestCount)
     }
 
     @Test

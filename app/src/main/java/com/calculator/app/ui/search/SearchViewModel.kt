@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.calculator.app.ai.AgeSafety
 import com.calculator.app.ai.SearchPlanner
 import com.calculator.app.data.AppPreferences
+import com.calculator.app.data.PlaybackResumePolicy
 import com.calculator.app.data.PlaybackStore
 import com.calculator.app.data.RecentPlayback
 import com.calculator.app.data.Repository
@@ -19,6 +20,7 @@ import com.calculator.app.data.extractor.ScrapeRuleStore
 import com.calculator.app.data.extractor.ScrapeRules
 import com.calculator.app.data.extractor.ResolvedStream
 import com.calculator.app.data.extractor.SiteInfo
+import com.calculator.app.data.extractor.SiteUrlPolicy
 import com.calculator.app.data.extractor.SiteSearchReport
 import com.calculator.app.data.extractor.StreamResolver
 import com.calculator.app.data.extractor.StreamSelection
@@ -92,9 +94,17 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var rulesMessage by mutableStateOf<String?>(null)
         private set
 
+    /** Persisted rules only; query-specific exclusions must not block saved videos. */
+    private var dislikedWords: List<String> = emptyList()
+    private var dislikeRulesLoaded = false
+
     init {
         // Uppdaterade regler hämtas i bakgrunden (högst en gång i dygnet) och slår igenom
         // först när de finns – en långsam hämtning får aldrig fördröja en sökning.
+        viewModelScope.launch {
+            dislikedWords = loadDislikeRules()
+            dislikeRulesLoaded = true
+        }
         viewModelScope.launch {
             val result = ruleStore.refresh()
             if (result is ScrapeRuleStore.RefreshResult.Updated) {
@@ -131,7 +141,25 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         isResolvingStream = false
         resolvingTitle = ""
     }
+
+    /** Clears all state owned by the previous search, including the Home feed. */
+    private fun resetSearchResults() {
+        activePlan = null
+        blockedWords = emptyList()
+        candidates.clear()
+        results = emptyList()
+        lastFeed = emptyList()
+        siteReports = emptyList()
+        activeQueries = emptyList()
+        availableTags = emptyList()
+        verificationTotal = 0
+        verificationDone = 0
+        canLoadMore = false
+        page = 1
+    }
+
     private var activePlan: SearchPlanner.Plan? = null
+    /** Query exclusions + persisted dislike rules for the active search. */
     private var blockedWords: List<String> = emptyList()
     private var page = 1
 
@@ -404,6 +432,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         availableTags = emptyList()
         activePlan = null
         blockedWords = emptyList()
+        dislikedWords = emptyList()
+        dislikeRulesLoaded = false
         candidates.clear()
         results = emptyList()
         lastFeed = emptyList()
@@ -487,24 +517,15 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearSearch() {
         cancelSearch()
+        resetSearchResults()
         query = ""
         negativeKeywords = ""
         selectedSubcategoryIds = emptySet()
         selectedTagFilters = emptySet()
-        availableTags = emptyList()
         scrapedQuery = ""
-        activePlan = null
-        candidates.clear()
-        results = emptyList()
-        siteReports = emptyList()
-        activeQueries = emptyList()
         explanation = null
         errorMessage = null
         noticeMessage = null
-        verificationTotal = 0
-        verificationDone = 0
-        canLoadMore = false
-        page = 1
     }
 
     // ---------------------------------------------------------------------
@@ -512,12 +533,16 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     // ---------------------------------------------------------------------
 
     fun search() {
-        if (isSearching || isLoadingMore) return
+        // A new explicit search replaces any previous query, including work that is
+        // enriching results after the network-search spinner has already stopped.
+        cancelSearch()
+        resetSearchResults()
         network = NetworkCondition.current(getApplication())
         searcher = MultiSiteSearcher(network = network, rules = rules)
 
+        val queryToRemember = query
         val plan = planner.plan(
-            rawInput = query,
+            rawInput = queryToRemember,
             categoryTerms = SearchTaxonomy.termsFor(selectedSubcategoryIds),
             extraNegatives = negativeKeywords.split(',', '\n', ';')
         )
@@ -535,31 +560,23 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        val siteIds = effectiveSiteIds()
+        if (siteIds.isEmpty()) {
+            errorMessage = "Alla sajter är avstängda i inställningarna."
+            return
+        }
+
         activePlan = plan
         activeQueries = plan.queries.map { it.text }
-        cancelSearch()
+        val activeSearcher = searcher
         val generation = searchGeneration
         isSearching = true
         searchJob = viewModelScope.launch {
-            candidates.clear()
-            results = emptyList()
-            siteReports = emptyList()
-            verificationTotal = 0
-            verificationDone = 0
-            canLoadMore = false
-            page = 1
             blockedWords = loadBlockedWords(plan)
-            if (query.isNotBlank()) preferences.addSearchHistory(query)
-
-            val siteIds = effectiveSiteIds()
-            if (siteIds.isEmpty()) {
-                errorMessage = "Alla sajter är avstängda i inställningarna."
-                isSearching = false
-                return@launch
-            }
+            if (queryToRemember.isNotBlank()) preferences.addSearchHistory(queryToRemember)
 
             try {
-                val outcome = searcher.search(
+                val outcome = activeSearcher.search(
                     queries = plan.queries,
                     siteIds = siteIds,
                     startPage = 1,
@@ -569,7 +586,12 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 siteReports = outcome.reports
                 canLoadMore = outcome.reports.any { it.count > 0 }
                 isSearching = false
-                enrichPending(plan, waveLimit = FULL_WAVE_LIMIT, budget = FULL_VERIFY_BUDGET)
+                enrichPending(
+                    plan,
+                    waveLimit = FULL_WAVE_LIMIT,
+                    budget = FULL_VERIFY_BUDGET,
+                    activeSearcher = activeSearcher
+                )
                 finalizeSearch()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -596,13 +618,14 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         cancelSearch()
+        val activeSearcher = searcher
         val generation = searchGeneration
         isLoadingMore = true
         searchJob = viewModelScope.launch {
             errorMessage = null
             try {
                 val nextPage = page + 1
-                val outcome = searcher.search(
+                val outcome = activeSearcher.search(
                     queries = plan.queries,
                     siteIds = siteIds,
                     startPage = nextPage,
@@ -612,7 +635,12 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 page = nextPage
                 siteReports = outcome.reports
                 canLoadMore = outcome.reports.any { it.count > 0 }
-                enrichPending(plan, waveLimit = FULL_WAVE_LIMIT, budget = LOAD_MORE_BUDGET)
+                enrichPending(
+                    plan,
+                    waveLimit = FULL_WAVE_LIMIT,
+                    budget = LOAD_MORE_BUDGET,
+                    activeSearcher = activeSearcher
+                )
                 finalizeSearch()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -656,7 +684,12 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
      * kvalitet, längd och beskrivning) i vågor, så att listan fylls på medan
      * hämtningen pågår. Sidor som inte svarar tas bort.
      */
-    private suspend fun enrichPending(plan: SearchPlanner.Plan, waveLimit: Int, budget: Int): Int {
+    private suspend fun enrichPending(
+        plan: SearchPlanner.Plan,
+        waveLimit: Int,
+        budget: Int,
+        activeSearcher: MultiSiteSearcher = searcher
+    ): Int {
         var enriched = 0
         var waves = 0
         var spent = 0
@@ -670,7 +703,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
             spent += pending.size
             verificationTotal += pending.size
-            enriched += searcher.enrichMetadata(
+            enriched += activeSearcher.enrichMetadata(
                 candidates = pending,
                 concurrency = network.enrichmentParallelism
             ) { updated ->
@@ -701,24 +734,33 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun loadBlockedWords(plan: SearchPlanner.Plan): List<String> {
-        val fromRules = try {
-            repository.getDislikeRules().first()
-                .filter { it.type == "keyword" || it.type == "tag" }
-                .map { it.value.lowercase(Locale.ROOT) }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            emptyList()
-        }
-        return (plan.negatives + fromRules)
+        dislikedWords = loadDislikeRules()
+        dislikeRulesLoaded = true
+        return (plan.negatives + dislikedWords)
             .map { it.lowercase(Locale.ROOT).trim() }
             .filter { it.isNotBlank() }
             .distinct()
     }
 
-    private fun isFilteredOut(result: SearchResult): Boolean {
+    private suspend fun loadDislikeRules(): List<String> = try {
+        repository.getDislikeRules().first()
+            .filter { it.type == "keyword" || it.type == "tag" }
+            .map { it.value.lowercase(Locale.ROOT).trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    private fun isFilteredOut(
+        result: SearchResult,
+        includeQueryNegatives: Boolean = true
+    ): Boolean {
         val text = result.searchableText.lowercase(Locale.ROOT)
-        return AgeSafety.containsBlockedTerm(text) || blockedWords.any { text.contains(it) }
+        val filters = if (includeQueryNegatives) blockedWords else dislikedWords
+        return AgeSafety.containsBlockedTerm(text) || filters.any { text.contains(it) }
     }
 
     private fun publishResults() {
@@ -774,7 +816,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun playRecent(entry: RecentPlayback) {
-        openOnSite(entry.toSearchResult(), startPositionMs = entry.positionMs)
+        viewModelScope.launch {
+            if (!dislikeRulesLoaded) {
+                dislikedWords = loadDislikeRules()
+                dislikeRulesLoaded = true
+            }
+            openOnSite(entry.toSearchResult(), startPositionMs = playbackStore.position(entry.id))
+        }
     }
 
     fun playRelative(offset: Int) {
@@ -816,11 +864,17 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 candidates[playable.id] = playable
                 publishResults()
+                playbackStore.savePlayed(playable)
+                playbackRevision++
                 webPlaying = null
                 nowPlaying = NowPlaying(
                     result = playable,
                     streamUrl = stream.url,
-                    startPositionMs = playbackStore.position(result.id),
+                    startPositionMs = PlaybackResumePolicy.startPosition(
+                        resumeEnabled = preferences.resumePlayback,
+                        requestedPositionMs = -1L,
+                        savedPositionMs = if (preferences.resumePlayback) playbackStore.position(result.id) else 0L
+                    ),
                     queueIndex = queueIndex,
                     queueSize = queue.size.coerceAtLeast(1)
                 )
@@ -841,15 +895,21 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         cancelPlayback()
         nowPlaying = null
         val enriched = candidates[result.id] ?: result
-        if (isFilteredOut(enriched)) {
+        if (isFilteredOut(enriched, includeQueryNegatives = false)) {
             errorMessage = "Videon är blockerad av innehållsfiltret."
             return
         }
-        val saved = when {
-            startPositionMs >= 0L -> startPositionMs
-            preferences.resumePlayback -> playbackStore.position(enriched.id)
-            else -> 0L
+        val sourceBaseUrl = siteInfos.firstOrNull { it.id == enriched.sourceSite }?.baseUrl
+        if (!SiteUrlPolicy.isSameSiteHttps(enriched.detailUrl, sourceBaseUrl)) {
+            webPlaying = null
+            errorMessage = "Videoadressen kunde inte verifieras för källsajten."
+            return
         }
+        val saved = PlaybackResumePolicy.startPosition(
+            resumeEnabled = preferences.resumePlayback,
+            requestedPositionMs = startPositionMs,
+            savedPositionMs = if (preferences.resumePlayback) playbackStore.position(enriched.id) else 0L
+        )
 
         if (!keepQueue || queue.isEmpty()) {
             queue = results.filter { it.isPlayable }
@@ -932,7 +992,11 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     publishResults()
                     nowPlaying = playing.copy(
                         streamUrl = stream.url,
-                        startPositionMs = playbackStore.position(id),
+                        startPositionMs = PlaybackResumePolicy.startPosition(
+                            resumeEnabled = preferences.resumePlayback,
+                            requestedPositionMs = -1L,
+                            savedPositionMs = if (preferences.resumePlayback) playbackStore.position(id) else 0L
+                        ),
                         result = refreshed
                     )
                 }
@@ -1001,6 +1065,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             repository.addDislikeRule(type = "keyword", value = normalizedKeyword)
+            dislikedWords = (dislikedWords + normalizedKeyword).distinct()
             blockedWords = (blockedWords + normalizedKeyword).distinct()
             candidates.asSequence()
                 .filter { isFilteredOut(it.value) }
@@ -1017,23 +1082,15 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     fun useSearchPreset(preset: SearchPresetEntity) {
         cancelSearch()
+        resetSearchResults()
         query = preset.query
         negativeKeywords = preset.negativeKeywords
         selectedSubcategoryIds = emptySet()
         selectedTagFilters = emptySet()
         scrapedQuery = ""
-        activePlan = null
-        candidates.clear()
-        results = emptyList()
-        siteReports = emptyList()
-        activeQueries = emptyList()
         explanation = null
         errorMessage = null
         noticeMessage = null
-        verificationTotal = 0
-        verificationDone = 0
-        canLoadMore = false
-        page = 1
     }
 
     fun saveSearchPreset(name: String): Boolean {

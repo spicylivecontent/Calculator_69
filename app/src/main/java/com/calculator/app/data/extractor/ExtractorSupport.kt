@@ -80,7 +80,7 @@ object ExtractorSupport {
             if (id.isBlank() || id.length > 64) continue
 
             val detailUrl = absoluteUrl(config.baseUrl, href) ?: continue
-            if (!detailUrl.startsWith("https://")) continue
+            if (!SiteUrlPolicy.isSameSiteHttps(detailUrl, config.baseUrl)) continue
 
             val container = anchor.closest("div, li, article, figure, section")
                 ?: anchor.parent()
@@ -143,7 +143,7 @@ object ExtractorSupport {
             if (!looksLikeVideoHref(href)) continue
 
             val detailUrl = StreamSelection.normalize(href, baseUrl) ?: continue
-            if (!detailUrl.startsWith("https://")) continue
+            if (!SiteUrlPolicy.isSameSiteHttps(detailUrl, baseUrl)) continue
 
             val path = detailUrl.substringAfter("://").substringAfter('/', "").substringBefore('?')
             val id = path.trimEnd('/').substringAfterLast('/')

@@ -30,10 +30,17 @@ object MetadataExtractor {
         detailUrl: String,
         siteName: String = "",
         client: OkHttpClient = NetworkClient.client
-    ): VideoMetadata? = withContext(Dispatchers.IO) {
-        try {
-            val html = Fetch.pageBlocking(detailUrl, client = client) ?: return@withContext null
-            parse(html, detailUrl, siteName)
+    ): VideoMetadata? {
+        val html = try {
+            Fetch.page(detailUrl, client = client)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        } ?: return null
+
+        return try {
+            withContext(Dispatchers.Default) { parse(html, detailUrl, siteName) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
