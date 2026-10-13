@@ -104,6 +104,7 @@ import kotlin.math.roundToInt
 
 private data class OverlayFeedback(val text: String, val icon: ImageVector)
 
+@OptIn(UnstableApi::class)
 private enum class ResizeOption(val label: String) {
     FIT("Anpassa"),
     FILL("Fyll skärmen"),

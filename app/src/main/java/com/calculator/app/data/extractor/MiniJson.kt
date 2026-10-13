@@ -71,14 +71,18 @@ object MiniJson {
             if (index >= input.length) throw IllegalStateException("tom JSON")
             require(depth < 64) { "JSON nesting limit exceeded" }
             depth++
-            return try { when (val char = input[index]) {
-                '{' -> readObject()
-                '[' -> readArray()
-                '"' -> readString()
-                't', 'f' -> readBoolean()
-                'n' -> readNull()
-                else -> if (char == '-' || char.isDigit()) readNumber() else throw IllegalStateException("oväntat tecken: $char")
-            } } finally { depth-- }
+            return try {
+                when (val char = input[index]) {
+                    '{' -> readObject()
+                    '[' -> readArray()
+                    '"' -> readString()
+                    't', 'f' -> readBoolean()
+                    'n' -> readNull()
+                    else -> if (char == '-' || char.isDigit()) readNumber() else throw IllegalStateException("oväntat tecken: $char")
+                }
+            } finally {
+                depth--
+            }
         }
 
         fun skipWhitespace() {
@@ -165,7 +169,7 @@ object MiniJson {
                     }
 
                     else -> {
-                        require(char >= ' ' ) { "Unescaped control character" }
+                        require(char >= ' ') { "Unescaped control character" }
                         builder.append(char)
                     }
                 }

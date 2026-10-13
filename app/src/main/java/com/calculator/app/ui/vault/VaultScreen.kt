@@ -212,29 +212,29 @@ private fun VaultContent(
     val onSite = searchViewModel.webPlaying
     if (onSite != null) {
         androidx.compose.runtime.key(onSite.result.id) {
-        WebPlayerScreen(
-            result = onSite.result,
-            skipSeconds = searchViewModel.preferences.skipSeconds,
-            keepScreenOn = searchViewModel.preferences.keepScreenOn,
-            gesturesEnabled = searchViewModel.preferences.gestureSeeking,
-            adBlockLevel = searchViewModel.adBlockLevel,
-            onAdBlockLevelChange = { searchViewModel.onAdBlockLevelChange(it) },
-            startPositionMs = onSite.startPositionMs,
-            hasNext = onSite.hasNext,
-            hasPrevious = onSite.hasPrevious,
-            onNext = { searchViewModel.playRelative(1) },
-            onPrevious = { searchViewModel.playRelative(-1) },
-            onProgress = { videoId, positionMs, durationMs ->
-                searchViewModel.onPlaybackProgress(videoId, positionMs, durationMs)
-            },
-            onSearchTag = { tag ->
-                searchViewModel.closeWebPlayer()
-                currentTab = VaultTab.SEARCH
-                searchViewModel.searchTag(tag)
-            },
-            onOpenNativePlayer = { result -> searchViewModel.playNativeStream(result) },
-            onBack = { searchViewModel.closeWebPlayer() }
-        )
+            WebPlayerScreen(
+                result = onSite.result,
+                skipSeconds = searchViewModel.preferences.skipSeconds,
+                keepScreenOn = searchViewModel.preferences.keepScreenOn,
+                gesturesEnabled = searchViewModel.preferences.gestureSeeking,
+                adBlockLevel = searchViewModel.adBlockLevel,
+                onAdBlockLevelChange = { searchViewModel.onAdBlockLevelChange(it) },
+                startPositionMs = onSite.startPositionMs,
+                hasNext = onSite.hasNext,
+                hasPrevious = onSite.hasPrevious,
+                onNext = { searchViewModel.playRelative(1) },
+                onPrevious = { searchViewModel.playRelative(-1) },
+                onProgress = { videoId, positionMs, durationMs ->
+                    searchViewModel.onPlaybackProgress(videoId, positionMs, durationMs)
+                },
+                onSearchTag = { tag ->
+                    searchViewModel.closeWebPlayer()
+                    currentTab = VaultTab.SEARCH
+                    searchViewModel.searchTag(tag)
+                },
+                onOpenNativePlayer = { result -> searchViewModel.playNativeStream(result) },
+                onBack = { searchViewModel.closeWebPlayer() }
+            )
         }
         return
     }
