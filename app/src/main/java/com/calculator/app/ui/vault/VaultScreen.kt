@@ -216,6 +216,7 @@ private fun VaultContent(
             result = onSite.result,
             skipSeconds = searchViewModel.preferences.skipSeconds,
             keepScreenOn = searchViewModel.preferences.keepScreenOn,
+            gesturesEnabled = searchViewModel.preferences.gestureSeeking,
             adBlockLevel = searchViewModel.adBlockLevel,
             onAdBlockLevelChange = { searchViewModel.onAdBlockLevelChange(it) },
             startPositionMs = onSite.startPositionMs,

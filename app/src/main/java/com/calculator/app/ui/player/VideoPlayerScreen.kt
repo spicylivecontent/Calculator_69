@@ -163,10 +163,16 @@ fun VideoPlayerScreen(
     // Fullskärm: dölj systemfälten så länge spelaren är öppen.
     DisposableEffect(activity) {
         val window = activity?.window
+        val originalBrightness = window?.attributes?.screenBrightness
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
         controller?.hide(WindowInsetsCompat.Type.systemBars())
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
+        onDispose {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+            if (window != null && originalBrightness != null) {
+                window.attributes = window.attributes.apply { screenBrightness = originalBrightness }
+            }
+        }
     }
 
     val audioManager = remember(context) {
@@ -453,10 +459,11 @@ fun VideoPlayerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(gesturesEnabled) {
+            .pointerInput(exoPlayer, gesturesEnabled, skipSeconds) {
                 detectTapGestures(
                     onTap = { showControls = !showControls },
-                    onDoubleTap = { offset ->
+                    onDoubleTap = doubleTap@{ offset ->
+                        if (!gesturesEnabled) return@doubleTap
                         val width = size.width.toFloat().coerceAtLeast(1f)
                         when {
                             offset.x < width * 0.4f -> if (durationMs > 0L) {
@@ -490,7 +497,7 @@ fun VideoPlayerScreen(
                     Modifier
                 } else {
                     Modifier
-                        .pointerInput(durationMs) {
+                        .pointerInput(exoPlayer, durationMs) {
                             if (durationMs <= 0L) return@pointerInput
                             var accumulated = 0f
                             var lastPreviewAt = 0L
@@ -527,7 +534,7 @@ fun VideoPlayerScreen(
                                 }
                             )
                         }
-                        .pointerInput(durationMs) {
+                        .pointerInput(exoPlayer, durationMs) {
                             var mode = 0
                             var startValue = 0f
                             detectVerticalDragGestures(
@@ -542,10 +549,12 @@ fun VideoPlayerScreen(
                                     val delta = -dragAmount / height
                                     if (mode == MODE_VOLUME) {
                                         val value = (startValue + delta).coerceIn(0f, 1f)
+                                        startValue = value
                                         setVolume(audioManager, value)
                                         hud = "Volym ${(value * 100).roundToInt()}%"
                                     } else {
                                         val value = (startValue + delta).coerceIn(0.04f, 1f)
+                                        startValue = value
                                         setBrightness(activity, value)
                                         hud = "Ljus ${(value * 100).roundToInt()}%"
                                     }

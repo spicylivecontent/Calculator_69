@@ -105,6 +105,7 @@ fun WebPlayerScreen(
     onBack: () -> Unit,
     skipSeconds: Int = 10,
     keepScreenOn: Boolean = true,
+    gesturesEnabled: Boolean = true,
     adBlockLevel: AdBlockLevel = AdBlockLevel.STANDARD,
     onAdBlockLevelChange: (AdBlockLevel) -> Unit = {},
     startPositionMs: Long = 0L,
@@ -373,10 +374,11 @@ fun WebPlayerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(Unit) {
+            .pointerInput(gesturesEnabled, skipSeconds) {
                 detectTapGestures(
                     onTap = { showControls = !showControls },
-                    onDoubleTap = { offset ->
+                    onDoubleTap = doubleTap@{ offset ->
+                        if (!gesturesEnabled) return@doubleTap
                         // Knapparna sköter spolningen; dubbeltryck visar bara kontrollerna.
                         showControls = true
                         if (offset.x < size.width * 0.5f) {

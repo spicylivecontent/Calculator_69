@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -36,6 +37,10 @@ fun PlayerSeekBar(
     modifier: Modifier = Modifier,
     accent: Color = Color(0xFF00E676)
 ) {
+    val currentStart by rememberUpdatedState(onScrubStart)
+    val currentPreview by rememberUpdatedState(onScrubPreview)
+    val currentCommit by rememberUpdatedState(onScrubCommit)
+    val currentCancel by rememberUpdatedState(onScrubCancel)
     var isDragging by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableFloatStateOf(0f) }
 
@@ -56,8 +61,8 @@ fun PlayerSeekBar(
                 detectTapGestures { offset ->
                     val fraction = fractionFor(offset.x, size.width.toFloat())
                     dragFraction = fraction
-                    onScrubPreview((fraction * safeDuration).toLong())
-                    onScrubCommit((fraction * safeDuration).toLong())
+                    currentPreview((fraction * safeDuration).toLong())
+                    currentCommit((fraction * safeDuration).toLong())
                 }
             }
             .pointerInput(enabled, durationMs) {
@@ -66,22 +71,22 @@ fun PlayerSeekBar(
                     onDragStart = { offset ->
                         isDragging = true
                         dragFraction = fractionFor(offset.x, size.width.toFloat())
-                        onScrubStart()
-                        onScrubPreview((dragFraction * safeDuration).toLong())
+                        currentStart()
+                        currentPreview((dragFraction * safeDuration).toLong())
                     },
                     onHorizontalDrag = { change, dragAmount ->
                         change.consume()
                         val width = size.width.toFloat().coerceAtLeast(1f)
                         dragFraction = (dragFraction + dragAmount / width).coerceIn(0f, 1f)
-                        onScrubPreview((dragFraction * safeDuration).toLong())
+                        currentPreview((dragFraction * safeDuration).toLong())
                     },
                     onDragEnd = {
                         isDragging = false
-                        onScrubCommit((dragFraction * safeDuration).toLong())
+                        currentCommit((dragFraction * safeDuration).toLong())
                     },
                     onDragCancel = {
                         isDragging = false
-                        onScrubCancel()
+                        currentCancel()
                     }
                 )
             }
