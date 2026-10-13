@@ -53,9 +53,13 @@ jobs:
           profile: pixel_5
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # Skriptet körs med sh (dash), så håll det till vanlig POSIX-syntax:
+          # det finns inget pipefail här. Loggen sparas för felsteget nedan.
           script: |
-            set -o pipefail
-            ./gradlew --no-daemon connectedDebugAndroidTest --stacktrace --console=plain 2>&1 | tee ui-tests.log
+            ./gradlew --no-daemon connectedDebugAndroidTest --stacktrace --console=plain > ui-tests.log 2>&1
+            STATUS=$?
+            tail -n 120 ui-tests.log
+            exit $STATUS
 
       - name: Sammanfatta fel
         if: failure()
@@ -64,7 +68,11 @@ jobs:
             echo "## Instrumenterade tester"
             echo
             echo '```text'
-            grep -E 'FAILED|AssertionError|ComparisonFailure|Expected|Failed to|error:|^e: ' ui-tests.log 2>/dev/null | head -n 60 || true
+            if [ -f ui-tests.log ]; then
+              grep -E 'FAILED|AssertionError|ComparisonFailure|Expected|Failed to|error:|^e: ' ui-tests.log | head -n 60 || true
+            else
+              echo "Ingen ui-tests.log – jobbet föll innan Gradle hann köra (t.ex. emulatorn startade inte)."
+            fi
             echo '```'
             echo
             echo "## Testresultat"
@@ -78,7 +86,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           {
-            grep -E 'FAILED|AssertionError|ComparisonFailure|Expected' ui-tests.log 2>/dev/null | head -n 10
+            if [ -f ui-tests.log ]; then
+              grep -E 'FAILED|AssertionError|ComparisonFailure|Expected' ui-tests.log | head -n 10
+            else
+              echo "Instrumenterade tester: ingen loggfil skapades (emulatorn eller skriptet föll tidigt)"
+            fi
             find app/build -name "TEST-*.xml" -path "*androidTest*" -print 2>/dev/null | while read -r file; do
               grep -h -B1 '<failure' "$file" | head -n 10 || true
             done
