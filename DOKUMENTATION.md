@@ -913,7 +913,7 @@ fel kan läsas utan att ladda ner loggen.
 ## 18. Utvecklingshistorik
 
 Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) innehåller
-18 commits:
+22 commits (de två sista enbart dokumentation):
 
 | Commit | Innehåll |
 |---|---|
@@ -937,6 +937,7 @@ Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) inneh�
 | `68ef59a` | Tre testfixar: slug-fallback i reservparsningen, nätverkstestet beskriver rätt beteende |
 | `0f47ec4` | **Fjärrkonfigurerbara skrapregler** (`scrape-rules.json`, validering, cache, inställningar) + `ScrapeRuleTest` |
 | `34c8f04` | **MockWebServer-tester** över TLS + injicerbar klient i `Fetch`/`MetadataExtractor` |
+| `c677a06`, `6f39e04` | Dokumentationen uppdaterad (kryptering, robusthet, fjärrregler, tester) |
 
 Senaste gröna CI-körning: **38409851452** (tester + APK, 21,7 MB). Efterföljande
 körningar verifierar robusthetsbatchen, krypteringen, fjärrreglerna och
@@ -975,6 +976,6 @@ MockWebServer-testerna (`85b90ad` → `34c8f04`).
 
 ---
 
-*Dokumentet beskriver appen vid commit `4065589` på branchen
-`arena/a0d9d445-calculator-69`. Ändras koden ändras detaljerna – kör testerna och
-bygg APK via CI för att verifiera.*
+*Dokumentet beskriver appen vid commit `6f39e04` på branchen
+`arena/a0d9d445-calculator-69` (20 kodcommits efter `4065589`, 22 totalt sedan `03ccd07`).
+Ändras koden ändras detaljerna – kör testerna och bygg APK via CI för att verifiera.*
