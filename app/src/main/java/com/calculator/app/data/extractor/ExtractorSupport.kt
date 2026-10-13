@@ -134,6 +134,7 @@ object ExtractorSupport {
     ): List<SearchResult> {
         if (html.isBlank()) return emptyList()
         val doc = Jsoup.parse(html, baseUrl)
+        val config = genericConfig(siteName, baseUrl)
         val results = LinkedHashMap<String, SearchResult>()
 
         for (anchor in doc.select("a[href]")) {
@@ -149,16 +150,25 @@ object ExtractorSupport {
             if (id.isBlank() || id.length > 64) continue
 
             val container = anchor.closest("div, li, article, figure, section") ?: anchor.parent() ?: anchor
-            val title = titleFrom(anchor, container, genericConfig(siteName, baseUrl)) ?: continue
-
+            // Saknar länken rubrik får sluggen i URL:en bli titeln, precis som i den
+            // konfigurerade parsningen – annars tappas träffar som bara visar en bild.
+            val title = titleFrom(anchor, container, config) ?: titleFromSlug(href) ?: continue
             val key = "${siteName}_$id"
-            if (results.containsKey(key)) continue
+            val thumb = imageUrl(container, anchor, config)
 
-            val duration = durationFrom(container, genericConfig(siteName, baseUrl))
+            val existing = results[key]
+            if (existing != null) {
+                if (existing.thumbnailUrl.isNullOrBlank() && !thumb.isNullOrBlank()) {
+                    results[key] = existing.copy(thumbnailUrl = thumb)
+                }
+                continue
+            }
+
+            val duration = durationFrom(container, config)
             results[key] = SearchResult(
                 id = key,
                 title = title,
-                thumbnailUrl = imageUrl(container, anchor, genericConfig(siteName, baseUrl)),
+                thumbnailUrl = thumb,
                 duration = duration,
                 durationSeconds = DurationParser.toSeconds(duration),
                 detailUrl = detailUrl,

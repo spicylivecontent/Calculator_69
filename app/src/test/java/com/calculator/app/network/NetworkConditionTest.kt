@@ -19,12 +19,16 @@ class NetworkConditionTest {
     }
 
     @Test
-    fun mobileDataUsesAHarderTimeoutToSaveData() {
+    fun mobileDataRunsFewerRequestsButGetsMoreTimePerSite() {
         val wifi = NetworkCondition.from(isMetered = false, isWifi = true)
         val mobile = NetworkCondition.from(isMetered = true, isWifi = false)
 
-        assertTrue(mobile.siteTimeoutMs <= wifi.siteTimeoutMs)
-        assertTrue(mobile.siteTimeoutMs >= 5_000L)
+        // Färre anrop samtidigt sparar trafik …
+        assertTrue(mobile.siteParallelism < wifi.siteParallelism)
+        assertTrue(mobile.enrichmentParallelism < wifi.enrichmentParallelism)
+        // … men en långsammare sajt får längre tid på sig innan den hoppas över.
+        assertTrue("mobildata ska ge mer tid per sajt", mobile.siteTimeoutMs > wifi.siteTimeoutMs)
+        assertTrue(mobile.siteTimeoutMs in 5_000L..15_000L)
     }
 
     @Test
