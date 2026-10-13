@@ -48,6 +48,20 @@ class NetworkConditionTest {
     }
 
     @Test
+    fun lowBatteryHalvesTheWorkButNeverBelowOne() {
+        val wifi = NetworkCondition.from(isMetered = false, isWifi = true)
+        val wifiLow = NetworkCondition.from(isMetered = false, isWifi = true, isLowBattery = true)
+        val meteredLow = NetworkCondition.from(isMetered = true, isWifi = false, isLowBattery = true)
+        val offlineLow = NetworkCondition.from(isMetered = true, isWifi = false, isOffline = true, isLowBattery = true)
+
+        assertEquals(wifi.enrichmentParallelism / 2, wifiLow.enrichmentParallelism)
+        assertEquals(wifi.siteParallelism / 2, wifiLow.siteParallelism)
+        assertTrue("mobildata + låg batterinivå ska fortfarande kunna hämta något", meteredLow.enrichmentParallelism >= 1)
+        assertEquals("offline eller låg batterinivå ska aldrig ge noll", 1, offlineLow.enrichmentParallelism)
+        assertTrue(wifiLow.label.contains("låg batterinivå"))
+    }
+
+    @Test
     fun parallelismIsAlwaysWithinSafeBounds() {
         val cases = listOf(
             NetworkCondition.from(isMetered = true, isWifi = false),

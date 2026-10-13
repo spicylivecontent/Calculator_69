@@ -29,6 +29,52 @@ class ResultRankerTest {
         tagCount = tags.size
     )
 
+    /**
+     * Snapshot av rangordningen: en fast uppsättning träffar ska alltid komma i samma
+     * ordning. Ändrar någon viktningen i ResultRanker får det inte ske av misstag – då
+     * faller det här testet och ändringen blir ett medvetet val.
+     */
+    @Test
+    fun rankingOrderIsStableForAFixedSetOfResults() {
+        val results = listOf(
+            result(
+                id = "traff-c",
+                title = "Massage clip",
+                playability = Playability.PLAYABLE
+            ),
+            result(
+                id = "traff-d",
+                title = "Blonde kitchen",
+                playability = Playability.UNVERIFIED,
+                tags = emptyList(),
+                description = null
+            ),
+            result(
+                id = "traff-b",
+                title = "Kitchen blonde amateur",
+                playability = Playability.PLAYABLE,
+                tags = listOf("Blonde"),
+                description = null
+            ),
+            result(
+                id = "traff-a",
+                title = "Blonde in the kitchen",
+                playability = Playability.PLAYABLE,
+                tags = listOf("Blonde", "Kitchen"),
+                description = "En blond kock i ett litet kök."
+            )
+        )
+
+        val ranked = ResultRanker.rank(results, listOf("blonde", "kitchen"))
+
+        assertEquals(
+            listOf("traff-a", "traff-b", "traff-c", "traff-d"),
+            ranked.map { it.id }
+        )
+        assertEquals("dubbletter ska inte ändra antalet", 4, ranked.size)
+        assertTrue("alla träffar ska ha en poäng", ranked.all { it.relevance > 0 })
+    }
+
     @Test
     fun tokenizeKeepsWordsOfAtLeastThreeLetters() {
         assertEquals(listOf("blonde", "kitchen"), ResultRanker.tokenize("Blonde, kitchen!"))

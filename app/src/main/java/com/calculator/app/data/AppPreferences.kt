@@ -72,6 +72,16 @@ class AppPreferences(context: Context) {
         get() = PreferredQuality.fromId(prefs.getString(KEY_QUALITY, PreferredQuality.AUTO.id))
         set(value) = prefs.edit().putString(KEY_QUALITY, value.id).apply()
 
+    /** Sajter användaren stängt av permanent (tomt = alla är på). */
+    fun disabledSites(): Set<String> =
+        prefs.getStringSet(KEY_DISABLED_SITES, emptySet()).orEmpty().toSet()
+
+    fun setSiteEnabled(siteId: String, enabled: Boolean) {
+        val updated = disabledSites().toMutableSet()
+        if (enabled) updated.remove(siteId) else updated.add(siteId)
+        prefs.edit().putStringSet(KEY_DISABLED_SITES, updated).apply()
+    }
+
     /** När vaulten låser sig själv. */
     var autoLock: AutoLock
         get() = AutoLock.fromId(prefs.getString(KEY_AUTO_LOCK, AutoLock.ON_BACKGROUND.id))
@@ -119,6 +129,7 @@ class AppPreferences(context: Context) {
         const val KEY_ADBLOCK = "adblock_level"
         const val KEY_REMOTE_RULES = "remote_rules_enabled"
         const val KEY_AUTO_LOCK = "auto_lock"
+        const val KEY_DISABLED_SITES = "disabled_sites"
         const val KEY_HISTORY = "search_history"
         const val SEPARATOR = "\n"
         const val MAX_HISTORY = 12

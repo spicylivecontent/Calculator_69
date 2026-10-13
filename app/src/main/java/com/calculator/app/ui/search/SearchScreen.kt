@@ -158,6 +158,8 @@ fun SearchScreen(
                     )
                 }
                 item {
+                    val activeSites = viewModel.siteInfos.filterNot { it.id in viewModel.disabledSiteIds }
+                    val activeSiteCount = activeSites.size
                     Box {
                         TagChip(
                             text = if (viewModel.selectedSiteIds.isEmpty()) "Alla sajter" else "Sajter (${viewModel.selectedSiteIds.size})",
@@ -166,7 +168,7 @@ fun SearchScreen(
                         )
                         DropdownMenu(expanded = showSitesMenu, onDismissRequest = { showSitesMenu = false }) {
                             DropdownMenuItem(
-                                text = { Text("Alla sajter (${viewModel.siteInfos.size})") },
+                                text = { Text("Alla sajter (${activeSiteCount})") },
                                 onClick = {
                                     viewModel.selectAllSites()
                                     showSitesMenu = false
@@ -175,15 +177,16 @@ fun SearchScreen(
                                     if (viewModel.selectedSiteIds.isEmpty()) Icon(Icons.Default.Check, contentDescription = null)
                                 }
                             )
-                            viewModel.siteInfos.forEach { site ->
-                                DropdownMenuItem(
-                                    text = { Text(site.label) },
-                                    onClick = { viewModel.toggleSite(site.id) },
-                                    trailingIcon = {
-                                        if (site.id in viewModel.selectedSiteIds) Icon(Icons.Default.Check, contentDescription = null)
-                                    }
-                                )
-                            }
+                            // Sajter som stängts av i inställningarna visas inte här.
+                            activeSites.forEach { site ->
+                                    DropdownMenuItem(
+                                        text = { Text(site.label) },
+                                        onClick = { viewModel.toggleSite(site.id) },
+                                        trailingIcon = {
+                                            if (site.id in viewModel.selectedSiteIds) Icon(Icons.Default.Check, contentDescription = null)
+                                        }
+                                    )
+                                }
                         }
                     }
                 }

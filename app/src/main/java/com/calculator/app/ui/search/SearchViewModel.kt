@@ -142,6 +142,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var selectedSiteIds by mutableStateOf<Set<String>>(emptySet())
         private set
 
+    /** Sajter användaren stängt av permanent i inställningarna. */
+    var disabledSiteIds by mutableStateOf(preferences.disabledSites())
+        private set
+
     var sortOrder by mutableStateOf(SortOrder.RELEVANCE)
         private set
 
@@ -422,6 +426,24 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         selectedSiteIds = emptySet()
     }
 
+    /** Slår av eller på en sajt för gott (sparas i inställningarna). */
+    fun onSiteEnabledChange(siteId: String, enabled: Boolean) {
+        preferences.setSiteEnabled(siteId, enabled)
+        disabledSiteIds = preferences.disabledSites()
+        if (!enabled) selectedSiteIds = selectedSiteIds - siteId
+    }
+
+    /**
+     * Sajterna som en sökning faktiskt använder: de valda (eller alla) minus de som
+     * stängts av permanent. Tom mängd betyder att inget kan sökas.
+     */
+    private fun effectiveSiteIds(): Set<String> {
+        val disabled = disabledSiteIds
+        val available = siteInfos.map { it.id }.filterNot { it in disabled }.toSet()
+        val explicitlySelected = selectedSiteIds
+        return if (explicitlySelected.isEmpty()) available else explicitlySelected.intersect(available)
+    }
+
     fun onSortOrderChange(order: SortOrder) {
         sortOrder = order
         publishResults()
@@ -504,10 +526,17 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             blockedWords = loadBlockedWords(plan)
             if (query.isNotBlank()) preferences.addSearchHistory(query)
 
+            val siteIds = effectiveSiteIds()
+            if (siteIds.isEmpty()) {
+                errorMessage = "Alla sajter är avstängda i inställningarna."
+                isSearching = false
+                return@launch
+            }
+
             try {
                 val outcome = searcher.search(
                     queries = plan.queries,
-                    siteIds = selectedSiteIds,
+                    siteIds = siteIds,
                     startPage = 1,
                     pageCount = 1,
                     onBatch = { batch -> applyBatch(batch) }
@@ -540,7 +569,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 page += 1
                 searcher.search(
                     queries = plan.queries,
-                    siteIds = selectedSiteIds,
+                    siteIds = effectiveSiteIds(),
                     startPage = page,
                     pageCount = 1,
                     onBatch = { batch -> applyBatch(batch) }

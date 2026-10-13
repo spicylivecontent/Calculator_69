@@ -3,6 +3,8 @@ package com.calculator.app.ui.settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -39,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.calculator.app.data.AppPreferences
 import com.calculator.app.data.AutoLock
 import com.calculator.app.data.PreferredQuality
+import com.calculator.app.data.extractor.SiteInfo
 import com.calculator.app.ui.components.SectionHeader
 import com.calculator.app.ui.components.TagChip
 import com.calculator.app.ui.web.AdBlockLevel
@@ -48,10 +51,13 @@ import com.calculator.app.ui.theme.VaultSurface
 import com.calculator.app.ui.theme.VaultTextPrimary
 import com.calculator.app.ui.theme.VaultTextSecondary
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     preferences: AppPreferences,
-    supportedSiteLabels: List<String>,
+    sites: List<SiteInfo> = emptyList(),
+    disabledSiteIds: Set<String> = emptySet(),
+    onSiteEnabledChange: (String, Boolean) -> Unit = { _, _ -> },
     historySize: Int,
     onlyPlayable: Boolean,
     onOnlyPlayableChange: (Boolean) -> Unit,
@@ -230,14 +236,35 @@ fun SettingsScreen(
         item { SectionHeader(title = "Sajter") }
         item {
             VaultSettingCard(
-                title = "${supportedSiteLabels.size} sajter",
-                subtitle = supportedSiteLabels.joinToString(", ")
+                title = "${sites.size - disabledSiteIds.size} av ${sites.size} sajter aktiva",
+                subtitle = sites.filterNot { it.id in disabledSiteIds }.joinToString(", ") { it.label }
             ) {
                 Text(
-                    "Appen blockerar annons- och trackingdomäner, läser inga inloggningar och skickar inga uppgifter till tredje part.",
+                    "Peka på en sajt för att stänga av eller slå på den. Avstängda sajter används inte i sökningar och försvinner ur sajtfiltret.",
                     color = VaultTextSecondary,
                     fontSize = 12.sp
                 )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    sites.forEach { site ->
+                        val enabled = site.id !in disabledSiteIds
+                        TagChip(
+                            text = if (enabled) site.label else "${site.label} · av",
+                            selected = !enabled,
+                            onClick = { onSiteEnabledChange(site.id, !enabled) }
+                        )
+                    }
+                }
+                if (disabledSiteIds.isNotEmpty()) {
+                    Text(
+                        "Avstängda: ${sites.filter { it.id in disabledSiteIds }.joinToString(", ") { it.label }}",
+                        color = VaultTextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
         }
 

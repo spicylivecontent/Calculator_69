@@ -294,7 +294,9 @@ private fun VaultContent(
 
                 VaultTab.SETTINGS -> SettingsScreen(
                     preferences = searchViewModel.preferences,
-                    supportedSiteLabels = searchViewModel.siteInfos.map { it.label },
+                    sites = searchViewModel.siteInfos,
+                    disabledSiteIds = searchViewModel.disabledSiteIds,
+                    onSiteEnabledChange = { siteId, enabled -> searchViewModel.onSiteEnabledChange(siteId, enabled) },
                     historySize = searchViewModel.searchHistory.size,
                     onlyPlayable = searchViewModel.onlyPlayable,
                     onOnlyPlayableChange = { searchViewModel.onOnlyPlayableChange(it) },

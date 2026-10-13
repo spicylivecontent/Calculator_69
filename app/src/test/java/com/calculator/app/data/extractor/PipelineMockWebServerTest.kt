@@ -155,6 +155,27 @@ class PipelineMockWebServerTest {
     }
 
     @Test
+    fun aTemporaryServerErrorIsRetriedOnceAndThenSucceeds() {
+        server.enqueue(MockResponse().setResponseCode(503))
+        server.enqueue(MockResponse().setBody(listingHtml).setHeader("Content-Type", "text/html; charset=utf-8"))
+
+        val html = fetchPage("/search?q=blonde")
+
+        assertNotNull("omförsöket ska rädda hämtningen", html)
+        assertTrue(html!!.contains("blonde-in-the-kitchen-2024"))
+        assertEquals("första försöket + omförsöket", 2, server.requestCount)
+    }
+
+    @Test
+    fun aRemovedListingIsNotFetchedTwice() {
+        server.enqueue(MockResponse().setResponseCode(404))
+        server.enqueue(MockResponse().setBody(listingHtml).setHeader("Content-Type", "text/html; charset=utf-8"))
+
+        assertNull(fetchPage("/search?q=blonde"))
+        assertEquals("en 404 ska inte göras om", 1, server.requestCount)
+    }
+
+    @Test
     fun cleartextIsNeverFetched() {
         val cleartext = "http://localhost:${server.port}/search?q=blonde"
 

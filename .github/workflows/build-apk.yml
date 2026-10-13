@@ -78,6 +78,16 @@ jobs:
             echo "::error title=Gradle diagnostic::$line"
           done
 
+      - name: Kontrollera APK-storleken
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          SIZE=$(stat -c%s "$APK")
+          echo "APK: $((SIZE / 1024 / 1024)) MB ($SIZE byte)"
+          if [ "$SIZE" -gt 41943040 ]; then
+            echo "::error title=APK för stor::APK:n är $((SIZE / 1024 / 1024)) MB, taket är 40 MB"
+            exit 1
+          fi
+
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:

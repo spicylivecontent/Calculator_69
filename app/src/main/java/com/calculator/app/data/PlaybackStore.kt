@@ -112,8 +112,39 @@ class PlaybackStore(context: Context) {
         if (migrated.isNotEmpty()) writePositions(migrated)
     }
 
+    fun savePlayed(result: SearchResult) {
+        readAll().let { list ->
+            val existing = list.firstOrNull { it.id == result.id }
+            val entry = RecentPlayback(
+                id = result.id,
+                title = result.title,
+                thumbnailUrl = result.thumbnailUrl,
+                sourceSite = result.sourceSite,
+                detailUrl = result.detailUrl,
+                streamUrl = result.streamUrl ?: existing?.streamUrl,
+                positionMs = existing?.positionMs ?: 0L,
+                durationMs = existing?.durationMs ?: 0L,
+                updatedAt = System.currentTimeMillis()
+            )
+            val updated = (listOf(entry) + list.filterNot { it.id == result.id }).take(MAX_ENTRIES)
+            writeAll(updated)
+        }
+    }
+
+    fun recent(limit: Int = MAX_ENTRIES): List<RecentPlayback> = readAll().take(limit)
+
+    /** Videor som användaren inte tittat klart på, senast först. */
+    fun continueWatching(limit: Int = 10): List<RecentPlayback> =
+        readAll()
+            .filter { it.positionMs > RESUME_THRESHOLD_MS }
+            .filter { it.durationMs <= 0L || it.positionMs < it.durationMs - RESUME_END_MARGIN_MS }
+            .take(limit)
+
+    fun clear() = prefs.edit().remove(KEY_ENTRIES).remove(KEY_POSITIONS).apply()
+
     private fun readAll(): List<RecentPlayback> {
         val raw = SecureValue.read(prefs.getString(KEY_ENTRIES, null)) ?: return emptyList()
+        val positions = readPositions()
         return try {
             val array = JSONArray(raw)
             (0 until array.length()).mapNotNull { index ->
@@ -130,6 +161,13 @@ class PlaybackStore(context: Context) {
                     updatedAt = item.optLong("at")
                 )
             }.filter { it.id.isNotBlank() && it.detailUrl.isNotBlank() }
+                // Positionen sparas löpande (var femte sekund) i en egen karta – utan den
+                // här sammanfogningen skulle "Fortsätt titta" aldrig få några positioner.
+                .map { entry ->
+                    val stored = positions[entry.id]
+                    if (stored == null) entry
+                    else entry.copy(positionMs = stored.first, durationMs = stored.second)
+                }
         } catch (_: Exception) {
             emptyList()
         }
