@@ -150,7 +150,7 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 | Domänlogik (ren Kotlin) | `ai/`, `data/model/`, `data/taxonomy/`, `data/extractor/StreamSelection.kt`, `ui/web/WebAdBlock.kt` | Planering, relevans, tolkning, blockeringsregler – allt enhetstestbart. |
 | Nätverk | `network/`, `data/extractor/Fetch.kt` | OkHttp-klient, annonsblock, privacy-filter, hämtning. |
 | Data | `data/` | Room-databas, DAO:er, entities, SharedPreferences, uppspelningshistorik. |
-| Säkerhet | `security/PinStore.kt` | AES/GCM via Android Keystore. |
+| Säkerhet | `security/` | PIN-koder (`PinStore`), hemliga värden (`SecretCipher`) och databasens nyckel (`VaultDatabaseKey`) – AES/GCM med nycklar i Android Keystore. |
 
 ### Filkarta
 
@@ -178,7 +178,7 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 |---|---|---|
 | `ui/home/HomeScreen.kt` | 249 | Startsida: progressrad, "Fortsätt titta", 8 snabbval, kategorikort, senaste träffar, låsknapp |
 | `ui/search/SearchScreen.kt` | 673 | Sökfält, filterrad, kategoripanel, avancerat sökfält, taggmoln, resultatlista, "ladda fler", spara sökning |
-| `ui/search/SearchViewModel.kt` | 899 | Hela sök- och uppspelningsflödet (se avsnitt 5) |
+| `ui/search/SearchViewModel.kt` | 943 | Hela sök- och uppspelningsflödet (se avsnitt 5), `clearSensitiveState()` |
 | `ui/search/SearchViewModelFactory.kt` | 17 | Skapar ViewModel med Application |
 | `ui/library/LibraryScreen.kt` | 361 | Översikt + favoriter, watch later, historik, "never show again", sparade sökningar |
 | `ui/library/LibraryViewModel.kt` (+ Factory) | 75 | Flöden från Room + borttagningsmetoder |
@@ -207,15 +207,15 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 | `ai/SearchPlanner.kt` | ~330 | Gör om fritext + kategorier till flera sökfrågor, negativa filter, synonymer |
 | `ai/AgeSafety.kt` | 45 | Blocklista för termer som kan avse minderåriga + svensk feltext |
 | `data/taxonomy/SearchTaxonomy.kt` | 259 | 12 kategorier, 106 underkategorier, uppslag |
-| `data/extractor/SiteExtractor.kt` | 41 | Interface + `BaseSiteExtractor` (sök-URL + strukturell parsning) |
+| `data/extractor/SiteExtractor.kt` | 66 | Interface + `BaseSiteExtractor` (sök-URL, strukturell parsning, reservparsning, `responds`) |
 | `data/extractor/*Extractor.kt` (10 st) | 17–23 vardera | Sajtspecifik URL och listningskonfig |
-| `data/extractor/ExtractorSupport.kt` | 206 | Strukturell listningsparsning, titelstädning, tumnagel/längd/kvalitet |
-| `data/extractor/MultiSiteSearcher.kt` | 196 | Parallell sökning på alla sajter + inläsning av metadata i vågor |
+| `data/extractor/ExtractorSupport.kt` | 300 | Listningsparsning, reservparsning, titelstädning, tumnagel/längd/kvalitet |
+| `data/extractor/MultiSiteSearcher.kt` | 220 | Parallell sökning + inläsning i vågor, semafor och tidsgräns per sajt |
 | `data/extractor/MetadataExtractor.kt` | 344 | Läser ut all information från en detaljsida |
 | `data/extractor/MiniJson.kt` | 199 | Liten JSON-tolkare för `application/ld+json` |
 | `data/extractor/Fetch.kt` | 48 | Gemensam HTTPS-hämtning (12 s, max 6 MB) |
 | `data/extractor/StreamSelection.kt` | 260 | Url-normalisering, medietyper, HLS-varianter, kvalitetsgissning, `looksRemoved` |
-| `data/extractor/StreamResolver.kt` | 232 | Extrahering av mediaström (används av beta-spelaren) |
+| `data/extractor/StreamResolver.kt` | 237 | Extrahering av mediaström (används av beta-spelaren), `clearCache()` |
 
 **Modeller och logik**
 
@@ -233,7 +233,9 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 |---|---|---|
 | `data/AppPreferences.kt` | 88 | Alla inställningar (sparas i `calculator_app_prefs`) |
 | `data/PlaybackStore.kt` | ~150 | Uppspelningshistorik och positioner (`calculator_playback`) |
-| `data/AppDatabase.kt` | 44 | Room-databas, 6 tabeller, version 1 |
+| `data/AppDatabase.kt` | 83 | Room-databas (SQLCipher-krypterad), 6 tabeller, version 1, filval |
+| `data/VaultDatabasePlan.kt` | 43 | Ren logik: krypterad fil, migrering, fallback (testad) |
+| `data/LegacyVaultMigrator.kt` | 66 | Flyttar innehållet från den gamla okrypterade filen, en gång |
 | `data/Repository.kt` | 46 | Tunn wrapper över DAO:erna |
 | `data/dao/*.kt` (6 st) | 10–28 vardera | Video, favorit, watch later, dislike-regel, sökpreset, inställning |
 | `data/entity/*.kt` (6 st) | 10–19 vardera | Tabellmodeller |
@@ -241,6 +243,8 @@ MainActivity (FragmentActivity, FLAG_SECURE, edge-to-edge)
 | `network/AdBlockInterceptor.kt` | 26 | Kastar `IOException` för blockerade värdar |
 | `network/AdBlockHosts.kt` | 214 | Den delade domänlistan (148 domäner + 44 annonsvägar + 16 scheman) |
 | `network/PrivacyInterceptor.kt` | 62 | Tar bort trackingparametrar och identitetsheaders |
+| `network/NetworkCondition.kt` | 66 | Parallellitet och tidsgränser efter Wi-Fi / mobildata / offline |
+| `CalculatorApp.kt` | 55 | Applikationsklass: Coil-cache med fasta gränser + migrering vid start |
 
 ---
 
@@ -275,13 +279,17 @@ SearchPlanner.plan(rawInput, categoryTerms, extraNegatives)
         ▼
 MultiSiteSearcher.search(queries, siteIds, startPage=1, pageCount=1, maxPerSite=36)
   ├─ en korutin per sajt (Dispatchers.IO), alla frågor × sidor
+  ├─ semafor begränsar antalet samtidiga sajter (10 på Wi-Fi, 4 på mobildata)
+  ├─ varje sajtfråga har egen tidsgräns (6 s Wi-Fi, 9 s mobildata) – en långsam
+  │  sajt avbryts, rapporteras som fel och stoppar aldrig de andra
   ├─ matchedTerms slås ihop per träff, först-vinner-dedupe på "{sajt}_{id}"
   └─ onBatch → SearchViewModel.applyBatch (filtrerar bort blockerade ord,
      märker träffen CHECKING och publicerar direkt)
         │
         ▼
 enrichPending: vågor om 10 träffar (max 6 vågor / 60 träffar per sökning)
-  ├─ MultiSiteSearcher.enrichMetadata (8 samtidiga) hämtar varje detaljsida
+  ├─ MultiSiteSearcher.enrichMetadata (8 samtidiga på Wi-Fi, 3 på mobildata, 1 offline)
+  ├─ ger sajtens egen konfiguration noll träffar → reservparsning (parseListingsGeneric)
   ├─ MetadataExtractor läser rubrik, taggar, kategorier, medverkande,
   │  kvalitet, längd, datum, visningar och beskrivning
   ├─ sidan borta/osvarande  → UNPLAYABLE (döljs)
@@ -421,6 +429,17 @@ sajtens video-URL-mönster, och informationen plockas från närmaste omgivande 
 - **Längd**: kända längdselektorer, annars första `mm:ss`/`h:mm:ss` i blockets text.
 - **Kvalitet**: "4K"/"2160"/"1080"/"720"/"HD" i titeln.
 - **Begränsning**: 36–42 träffar per sajt och sökning, 120 nyckelordskandidater.
+
+**Reservparsning (`parseListingsGeneric`)** tar över när sajtens egen konfiguration inte
+hittar något alls. Då letas i stället alla länkar upp som *ser ut* som videosidor
+(`looksLikeVideoHref`: en slug med minst två ord, en siffer-id eller en känd
+videofiländelse) och titel, tumnagel och längd plockas från närmaste omgivande block.
+Länkar till taggar, kategorier, modellistor och rena mediafiler filtreras bort. Tack vare
+det ger en sajt som bytt klassnamn eller layout ändå träffar i stället för tomt resultat.
+
+**Tidsgräns per sajt**: varje sajtfråga körs i `withTimeoutOrNull` (6 sekunder på Wi-Fi,
+9 på mobildata). Svarar sajten inte i tid rapporteras den i felpanelen
+("Tog för lång tid (>6 s) – hoppades över"), resten av sökningen fortsätter.
 
 ---
 
@@ -650,8 +669,9 @@ spelarna och all hämtning).
 
 ### 13.1 Room-databasen
 
-`calculator_vault.db`, **version 1**, ingen migration definierad (nya tabellversioner
-kräver en migrering, annars återställs databasen).
+`calculator_vault_enc.db` (krypterad), **version 1**. Nya tabellversioner kräver en
+migrering. Den gamla okrypterade filen hette `calculator_vault.db` och flyttas in
+automatiskt en gång (se 13.3).
 
 | Tabell | Fält |
 |---|---|
@@ -664,6 +684,9 @@ kräver en migrering, annars återställs databasen).
 
 Favoriter och watch later är kopplade till `videos` via vyer som läser in video-raden,
 och räknare finns för alla listor (används av bibliotekets översikt).
+
+Varje DAO har dessutom en engångsläsning (`getAllVideosOnce`, `getAllFavoriteIds` med
+flera) som bara används av migreringen.
 
 ### 13.2 SharedPreferences
 
@@ -678,9 +701,30 @@ inom 30 sekunder från slutet. Historiken kan rensas från biblioteket.
 
 ### 13.3 Kryptering
 
-Bara PIN-koderna är krypterade (Android Keystore). **Room-databasen och
-SharedPreferences är inte krypterade** – de ligger i appens privata lagring och skyddas
-av Android-sandboxen, inte av kryptering. Det står också i README och i inställningarna.
+**PIN-koderna** ligger AES/GCM-krypterade med en nyckel i **Android Keystore** (alias
+`com.calculator.app.vault_pin_key`) – se avsnitt 6 och `security/PinStore.kt`.
+
+**Hela databasen är krypterad** med **SQLCipher** (`net.zetetic:sqlcipher-android`,
+version 4.19.1). Room kopplas ihop med `SupportOpenHelperFactory`, och det inbyggda
+biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
+
+* **Nyckeln** är 32 slumpade byte (`SecureRandom`) som skapas första gången appen körs.
+  Den sparas **krypterad** (AES/GCM, Keystore-nyckel `com.calculator.app.secret_cipher_key`)
+  i `SharedPreferences`-filen `calculator_vault_secret`, alltså aldrig i klartext på
+  disken. Den är *inte* härledd från PIN-koden – byter användaren kod fortsätter
+  biblioteket att fungera.
+* **Filvalet** (`VaultDatabasePlan`) är medvetet enkelt att resonera om:
+  krypterad fil `calculator_vault_enc.db`, gammal fil `calculator_vault.db`. Finns den
+  gamla filen men inte den krypterade körs `LegacyVaultMigrator` en gång vid start:
+  videor, favoriter, titta senare, regler och sparade sökningar läses in, skrivs till den
+  krypterade databasen och **först därefter** raderas originalet (inklusive `-wal`,
+  `-shm`, `-journal`). Misslyckas något lämnas originalet kvar.
+* **Fallback**: kan SQLCipher eller Keystore inte användas (till exempel en enhet där det
+  inbyggda biblioteket saknas) fortsätter appen med den gamla okrypterade filen i stället
+  för att krascha eller visa ett tomt bibliotek.
+* **SharedPreferences är fortfarande okrypterade** (utom databasens nyckel). Sök- och
+  uppspelningshistorik rensas ur minnet vid panik/lås (`clearSensitiveState`), men ligger
+  i klartext i appens privata lagring medan den används.
 
 ---
 
@@ -692,6 +736,10 @@ av Android-sandboxen, inte av kryptering. Det står också i README och i instä
   tillåter HTTPS och systemets certifikat. All hämtning kontrollerar dessutom
   `isHttps` innan en förfrågan byggs.
 - **Screenshots och app-switcher**: `FLAG_SECURE`.
+- **Krypterad databas**: hela Room-filen är SQLCipher-krypterad, med en slumpad nyckel
+  som i sin tur ligger krypterad i Android Keystore.
+- **Minnesrensning vid panik/lås**: träffar, frågor, taggar, kö och strömcache nollställs
+  innan appen lämnar vaulten.
 - **Ingen kontoinloggning** och inga uppgifter skickas någonstans: all logik körs
   lokalt, sökningar går direkt till sajterna.
 - **Sandboxad WebView**: ingen fil-/innehållsåtkomst, inga tredjepartscookies, inga
@@ -704,7 +752,7 @@ av Android-sandboxen, inte av kryptering. Det står också i README och i instä
 
 ## 15. Kvalitetssäkring: tester och CI
 
-### 15.1 Enhetstester (87 testfall, JVM)
+### 15.1 Enhetstester (110 testfall, JVM)
 
 | Fil | Testar |
 |---|---|
@@ -712,10 +760,14 @@ av Android-sandboxen, inte av kryptering. Det står också i README och i instä
 | `ai/SearchPlannerTest.kt` | Huvudsökning, varianter, negativa filter, svenska → engelska, citat, kategorier, tak på frågor, förklaringstext |
 | `data/taxonomy/SearchTaxonomyTest.kt` | Unika id:n, etiketter, gemena engelska termer, uppslag, inga blockerade ålderstermer |
 | `data/extractor/ExtractorSupportTest.kt` | Listningsparsning, titelstädning, slug-fallback, kvalitet, HTTPS-krav |
+| `data/extractor/GenericListingTest.kt` | Reservparsning: videolänkar utan klassnamn, filtrering av tagg-/kategorilänkar, dedup, HTTPS |
+| `data/extractor/SiteConfigTest.kt` | Alla tio sajter: unika id:n, HTTPS-sök-URL med orden kvar, att mönstret matchar sajtens egna länkar, konsekvent konfiguration |
 | `data/extractor/MetadataExtractorTest.kt` | Rubrik, beskrivning, taggar, medverkande, kategorier, kvalitet, längd (inkl. ISO 8601), borttagna sidor, nyckelordstak, täckning |
 | `data/extractor/MiniJsonTest.kt` | JSON-parsning, escapes/unicode, trasig indata, nästlad sökning, listor |
 | `data/extractor/StreamSelectionTest.kt` | HTTPS-krav, medietyper, rangordning, HLS-varianter, borttagna sidor, innehållstyper |
 | `data/model/DurationParserTest.kt` | Kolon- och ordformat, ogiltig indata, formatering |
+| `data/VaultDatabasePlanTest.kt` | Filval: migrering körs exakt en gång, ingen dubbelimport, fallback när kryptering saknas |
+| `network/NetworkConditionTest.kt` | Parallellitet och tidsgränser för Wi-Fi, mobildata, offline och okänt läge |
 | `data/model/ResultRankerTest.kt` | Relevans (rubrik/taggar/beskrivning), täckning, dubbletter, sortering, taggfilter, taggmoln, skrapad sökning |
 | `ui/web/WebAdBlockTest.kt` | Blockerade domäner/vägar, navigeringsbeslut, samma-sajt-logik (inkl. `co.uk`), injektionsscript, JS-escape |
 
@@ -744,7 +796,12 @@ fel kan läsas utan att ladda ner loggen.
    behöver underhållas.
 5. **Sidor som kräver inloggning eller har aggressiva captchas** kan visa sig sämre i
    WebView:n, särskilt i strikt läge.
-6. **Databasen är inte krypterad** och har ingen migreringsstrategi ännu (version 1).
+6. **Databasen är krypterad, men bara databasen.** SharedPreferences (utom databasens
+   nyckel) ligger i klartext i appens privata lagring. Databasen har version 1 och därmed
+   ingen schemamigrering ännu.
+7. **Krypteringen kan falla tillbaka på okrypterat** om SQLCipher eller Android Keystore
+   inte kan användas på enheten – det är ett medvetet val för att appen aldrig ska bli
+   oanvändbar, men det betyder att skyddet beror på enheten.
 7. **Inga instrumenterade UI-tester** – testerna täcker den rena logiken, inte
    skärmarna.
 8. **Nätverksberoende tester saknas** (medvetet): tester får aldrig kräva internet.
@@ -767,6 +824,11 @@ fel kan läsas utan att ladda ner loggen.
 | Sökning | Max träffar per sajt och fråga | 36 (vissa 42) |
 | Sökning | Taggmolnets storlek | 24 taggar |
 | Nätverk | Timeout vid sidhämtning | 12 s, max 6 MB |
+| Nätverk | Tidsgräns per sajt och fråga | 6 s (Wi-Fi) / 9 s (mobildata) |
+| Nätverk | Samtidiga sajter | 10 (Wi-Fi) / 4 (mobildata) |
+| Nätverk | Samtidiga inläsningar | 8 (Wi-Fi) / 3 (mobildata) / 1 (offline) |
+| Säkerhet | Databasnyckel | 32 slumpade byte, AES/GCM i Keystore |
+| Bilder | Coil-cache | 20 % av minnet, 64 MB på disk, tumnaglar 384×240 |
 | Nätverk | OkHttp-timeouts | 20 s anrop, 12 s connect/read/write |
 | Metadata | Beskrivning | max 1 500 tecken, 40 per lista, 60 nyckelord |
 | Ström | Cachelagring | 20 minuter, 400 poster |
@@ -788,7 +850,7 @@ fel kan läsas utan att ladda ner loggen.
 ## 18. Utvecklingshistorik
 
 Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) innehåller
-12 commits:
+16 commits:
 
 | Commit | Innehåll |
 |---|---|
@@ -804,8 +866,13 @@ Branchen `arena/a0d9d445-calculator-69` (utgår från `main` @ `03ccd07`) inneh�
 | `d100173` | `PlayerState` blir `internal` (publik funktion läckte privat typ) |
 | `6696bf3` | Saknad `assertFalse`-import i testet |
 | `4065589` | Kvalitetsavläsning av korta etiketter + testfall med identiska rubriker |
+| `01dfa82` | **DOKUMENTATION.md** – den här filen |
+| `85b90ad` | Robusthet och prestanda: tidsgräns och semafor per sajt, reservparsning, `NetworkCondition`, Coil-cache, `clearSensitiveState`, tre nya testfiler |
+| `3b40712` | Kompileringsfixar (`continue` i inline-lambda, deklarationsordning i `VaultScreen`) |
+| `b292d64` | **SQLCipher: krypterad databas**, Keystore-skyddad nyckel, engångsmigrering + `VaultDatabasePlanTest` |
 
-Senaste gröna CI-körning: **38409851452** (tester + APK, 21,7 MB).
+Senaste gröna CI-körning: **38409851452** (tester + APK, 21,7 MB). Efterföljande
+körningar verifierar robusthetsbatchen och krypteringen (`85b90ad`, `b292d64`).
 
 ---
 
