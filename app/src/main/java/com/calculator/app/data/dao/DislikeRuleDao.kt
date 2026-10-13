@@ -10,6 +10,10 @@ interface DislikeRuleDao {
     @Query("SELECT * FROM dislike_rules ORDER BY createdAt DESC")
     fun getAllRules(): Flow<List<DislikeRuleEntity>>
 
+    /** Engångsläsning, används av migreringen från den okrypterade databasen. */
+    @Query("SELECT * FROM dislike_rules ORDER BY createdAt DESC")
+    suspend fun getAllRulesOnce(): List<DislikeRuleEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRule(rule: DislikeRuleEntity)
 

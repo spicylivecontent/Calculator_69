@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.calculator.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.calculator.app"
@@ -76,6 +76,10 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
+    // SQLCipher – kryptering av hela databasfilen
+    implementation(variantOf(libs.sqlcipher.android) { artifactType("aar") })
+    implementation(libs.androidx.sqlite)
+
     // Media3 / ExoPlayer
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
@@ -93,6 +97,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     testImplementation(libs.junit)
+
+    // Enhetstester som kör mot en lokal HTTPS-server (MockWebServer)
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

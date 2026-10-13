@@ -10,6 +10,10 @@ interface SearchPresetDao {
     @Query("SELECT * FROM search_presets ORDER BY createdAt DESC")
     fun getAllPresets(): Flow<List<SearchPresetEntity>>
 
+    /** Engångsläsning, används av migreringen från den okrypterade databasen. */
+    @Query("SELECT * FROM search_presets ORDER BY createdAt DESC")
+    suspend fun getAllPresetsOnce(): List<SearchPresetEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPreset(preset: SearchPresetEntity)
 

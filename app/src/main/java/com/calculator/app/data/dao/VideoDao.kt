@@ -10,6 +10,10 @@ interface VideoDao {
     @Query("SELECT * FROM videos ORDER BY addedAt DESC")
     fun getAllVideos(): Flow<List<VideoEntity>>
 
+    /** Engångsläsning, används av migreringen från den okrypterade databasen. */
+    @Query("SELECT * FROM videos ORDER BY addedAt DESC")
+    suspend fun getAllVideosOnce(): List<VideoEntity>
+
     @Query("SELECT * FROM videos WHERE id = :id")
     suspend fun getVideoById(id: String): VideoEntity?
 

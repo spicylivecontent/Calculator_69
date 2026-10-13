@@ -22,8 +22,8 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK 35
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Install Android SDK 36
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
@@ -34,23 +34,81 @@ jobs:
         id: build_apk
         run: |
           set -o pipefail
-          ./gradlew --no-daemon testDebugUnitTest assembleDebug --stacktrace --console=plain 2>&1 | tee gradle-build.log
+          # assembleDebugAndroidTest kompilerar UI-testerna också, så att stavfel och
+          # API-fel där upptäcks direkt i det snabba jobbet (emulatorjobbet kör dem sedan).
+          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --stacktrace --console=plain 2>&1 | tee gradle-build.log
 
       - name: Report Gradle failure details
         if: failure() && steps.build_apk.outcome == 'failure'
         run: |
+          TESTDIR=app/build/test-results/testDebugUnitTest
           {
             echo "## Gradle build failure details"
             echo
             echo '```text'
             grep -E '(^e: | error: |FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find)' gradle-build.log | tail -n 50 || tail -n 80 gradle-build.log
             echo '```'
+            echo
+            echo "## Enhetstester"
+            echo
+            echo '```text'
+            if [ -d "$TESTDIR" ]; then
+              grep -h '<testsuite ' "$TESTDIR"/*.xml | head -n 20 || true
+              grep -h -B1 '<failure' "$TESTDIR"/*.xml | head -n 40 || true
+            else
+              echo "Inga testresultat hittades."
+            fi
+            echo '```'
+            echo
+            echo "## Testrader ur loggen"
+            echo
+            echo '```text'
+            grep -E 'FAILED|AssertionError|ComparisonFailure|expected:' gradle-build.log | head -n 60 || true
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          grep -E '(^e: | error: |FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find)' gradle-build.log | tail -n 50 | while IFS= read -r line; do
+
+          # Korta annotations så att felen syns direkt i check-run-fliken.
+          {
+            grep -E '^e: ' gradle-build.log | head -n 8
+            if [ -d "$TESTDIR" ]; then
+              grep -h -B1 '<failure' "$TESTDIR"/*.xml | head -n 20
+            fi
+            grep -E 'FAILED|AssertionError|ComparisonFailure|expected:' gradle-build.log | head -n 20
+          } | awk '!seen[$0]++' | head -n 30 | while IFS= read -r line; do
             line=${line//'%'/'%25'}
             line=${line//$'\r'/'%0D'}
             echo "::error title=Gradle diagnostic::$line"
           done
+
+      - name: Visa lintfel som annotations
+        if: failure()
+        run: |
+          python3 - <<'PYLINT'
+          import os
+          import xml.etree.ElementTree as ET
+          path = "app/build/reports/lint-results-debug.xml"
+          if os.path.exists(path):
+              for issue in ET.parse(path).getroot().findall("issue"):
+                  if issue.get("severity") not in ("Error", "Fatal"):
+                      continue
+                  message = issue.get("message", "").replace("%", "%25").replace("\n", "%0A").replace("\r", "%0D")
+                  location = issue.find("location")
+                  where = ""
+                  if location is not None:
+                      file = os.path.relpath(location.get("file", ""))
+                      where = ",file=" + file + ",line=" + location.get("line", "1")
+                  print("::error title=Android lint" + where + "::" + issue.get("id", "") + ": " + message)
+          PYLINT
+
+      - name: Kontrollera APK-storleken
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          SIZE=$(stat -c%s "$APK")
+          echo "APK: $((SIZE / 1024 / 1024)) MB ($SIZE byte)"
+          if [ "$SIZE" -gt 41943040 ]; then
+            echo "::error title=APK för stor::APK:n är $((SIZE / 1024 / 1024)) MB, taket är 40 MB"
+            exit 1
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
@@ -58,4 +116,16 @@ jobs:
           name: Calculator-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Spara enhets- och lintresultat
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-and-lint-reports
+          path: |
+            app/build/reports/tests/**
+            app/build/test-results/**
+            app/build/reports/lint-results-debug.*
+          if-no-files-found: ignore
           retention-days: 14

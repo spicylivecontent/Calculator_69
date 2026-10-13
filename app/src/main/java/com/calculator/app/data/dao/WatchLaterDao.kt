@@ -15,6 +15,10 @@ interface WatchLaterDao {
     """)
     fun getWatchLaterVideos(): Flow<List<VideoEntity>>
 
+    /** Engångsläsning, används av migreringen från den okrypterade databasen. */
+    @Query("SELECT videoId FROM watch_later")
+    suspend fun getAllWatchLaterIds(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun add(item: WatchLaterEntity)
 

@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -163,14 +164,23 @@ private fun CalculatorUI(viewModel: CalculatorViewModel) {
             modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
             horizontalAlignment = Alignment.End
         ) {
-            Text(viewModel.result, color = Color(0xFF90A4AE), fontSize = 28.sp, fontWeight = FontWeight.Light, maxLines = 1)
+            // Taggarna används av UI-testerna i androidTest för att läsa displayen,
+            // eftersom siffrorna även finns som knapptexter.
+            Text(
+                viewModel.result,
+                color = Color(0xFF90A4AE),
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Light,
+                maxLines = 1,
+                modifier = Modifier.testTag("calculator_result")
+            )
             Text(
                 viewModel.input.ifEmpty { "0" },
                 color = Color.White,
                 fontSize = 52.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
-                modifier = Modifier.horizontalScroll(inputScrollState)
+                modifier = Modifier.horizontalScroll(inputScrollState).testTag("calculator_input")
             )
         }
 

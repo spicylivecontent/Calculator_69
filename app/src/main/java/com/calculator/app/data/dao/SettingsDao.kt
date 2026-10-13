@@ -6,6 +6,9 @@ import com.calculator.app.data.entity.AppSettingsEntity
 @Dao
 interface SettingsDao {
 
+    @Query("SELECT * FROM app_settings")
+    suspend fun getAllOnce(): List<AppSettingsEntity>
+
     @Query("SELECT value FROM app_settings WHERE key = :key")
     suspend fun get(key: String): String?
 

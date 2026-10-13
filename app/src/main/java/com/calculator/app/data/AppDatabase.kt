@@ -6,6 +6,9 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.calculator.app.data.dao.*
 import com.calculator.app.data.entity.*
+import com.calculator.app.security.SqlCipherLoader
+import com.calculator.app.security.VaultDatabaseKey
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [
@@ -32,15 +35,49 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        @Volatile
+        private var layout: VaultDatabasePlan.Layout? = null
+
+        /**
+         * Öppnar (och skapar vid behov) databasen.
+         *
+         * Är SQLCipher och Android Keystore tillgängliga krypteras hela filen med en
+         * slumpad nyckel som förvaras krypterad i Keystore. Om krypteringen inte
+         * fungerar avbryts öppningen; UI visar ett fel utan att skriva klartext.
+         */
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
-                // Preserve stored data on upgrades; add explicit Room migrations for schema changes.
-                INSTANCE ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "calculator_vault.db"
-                ).build().also { INSTANCE = it }
+                INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
             }
+        }
+
+        private fun build(context: Context): AppDatabase {
+            check(SqlCipherLoader.load()) { "SQLCipher unavailable" }
+            val passphrase = checkNotNull(VaultDatabaseKey.passphrase(context)) { "Vault key unavailable" }
+            val plan = VaultDatabasePlan.layout(
+                encryptionAvailable = true,
+                encryptedExists = context.getDatabasePath(VaultDatabasePlan.ENCRYPTED_NAME).exists(),
+                plainExists = context.getDatabasePath(VaultDatabasePlan.PLAIN_NAME).exists()
+            )
+            layout = plan
+
+            val builder = Room.databaseBuilder(context, AppDatabase::class.java, plan.databaseName)
+            if (plan.encrypted) {
+                builder.openHelperFactory(SupportOpenHelperFactory(passphrase, null, true))
+            }
+            return builder.build()
+        }
+
+        /**
+         * Flyttar innehållet från den gamla okrypterade databasen första gången appen
+         * startas efter uppdateringen. Returnerar antalet rader som flyttades.
+         */
+        suspend fun migrateLegacyIfNeeded(context: Context): Int? {
+            val database = getInstance(context)
+            val source = layout?.migrateFrom ?: return null
+            val migrated = LegacyVaultMigrator.migrateIfNeeded(context.applicationContext, database, source)
+            if (migrated != null) layout = layout?.copy(migrateFrom = null)
+            return migrated
         }
     }
 }

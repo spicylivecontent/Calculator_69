@@ -18,6 +18,10 @@ interface FavoriteDao {
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE videoId = :videoId)")
     suspend fun isFavorite(videoId: String): Boolean
 
+    /** Engångsläsning, används av migreringen från den okrypterade databasen. */
+    @Query("SELECT videoId FROM favorites")
+    suspend fun getAllFavoriteIds(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addFavorite(favorite: FavoriteEntity)
 
