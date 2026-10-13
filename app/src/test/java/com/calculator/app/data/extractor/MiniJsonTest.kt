@@ -41,6 +41,13 @@ class MiniJsonTest {
     }
 
     @Test
+    fun rejectsTrailingContentInvalidNumbersEscapesAndExcessiveDepth() {
+        listOf("{} garbage", "01", "1e", "1e999", "[1+2]", "{\"a\":-}", "\"\\q\"", "\"\\u0z00\"", "\"line\nline\"")
+            .forEach { assertNull(it, MiniJson.parse(it)) }
+        assertNull(MiniJson.parse("[".repeat(1000) + "0" + "]".repeat(1000)))
+    }
+
+    @Test
     fun findsTheFirstMatchingObjectInNestedStructures() {
         val parsed = MiniJson.parse(
             """{"@graph":[{"@type":"BreadcrumbList"},{"@type":"VideoObject","name":"Hittad"}]}"""

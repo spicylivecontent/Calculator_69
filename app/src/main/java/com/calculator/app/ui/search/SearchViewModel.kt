@@ -752,6 +752,21 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     fun playVideo(result: SearchResult) = openOnSite(result, startPositionMs = -1L)
 
     /** Öppnar en sparad/spelad video igen, med återupptagning där användaren slutade. */
+    fun playSavedVideo(video: VideoEntity) {
+        val detail = video.detailPageUrl
+        if (detail.isNullOrBlank()) {
+            errorMessage = "Den sparade videon saknar en sidadress."
+            return
+        }
+        playVideo(SearchResult(
+            id = video.id, title = video.title, thumbnailUrl = video.thumbnailUrl,
+            duration = com.calculator.app.data.model.DurationParser.format(video.durationSeconds),
+            durationSeconds = video.durationSeconds, sourceSite = video.sourceSite,
+            detailUrl = detail, streamUrl = video.streamUrl, qualityLabel = video.quality,
+            tags = video.tags.split(',').map { it.trim() }.filter { it.isNotBlank() }
+        ))
+    }
+
     fun playRecent(entry: RecentPlayback) {
         openOnSite(entry.toSearchResult(), startPositionMs = entry.positionMs)
     }
@@ -820,6 +835,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         cancelPlayback()
         nowPlaying = null
         val enriched = candidates[result.id] ?: result
+        if (isFilteredOut(enriched)) {
+            errorMessage = "Videon är blockerad av innehållsfiltret."
+            return
+        }
         val saved = when {
             startPositionMs >= 0L -> startPositionMs
             preferences.resumePlayback -> playbackStore.position(enriched.id)
@@ -1077,7 +1096,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         detailPageUrl = detailUrl,
         streamUrl = streamUrl,
         quality = qualityLabel,
-        tags = matchedTerms.joinToString(", ")
+        tags = tags.joinToString(", ")
     )
 
     private companion object {

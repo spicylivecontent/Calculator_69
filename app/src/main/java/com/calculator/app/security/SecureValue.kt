@@ -5,8 +5,8 @@ package com.calculator.app.security
  * i Android Keystore).
  *
  * Värden som sparades innan krypteringen fanns saknar prefixet `enc:` och läses som
- * klartext – de krypteras nästa gång de skrivs. Kan krypteringen inte användas alls skrivs
- * värdet som klartext i stället, så att appen aldrig slutar fungera.
+ * klartext – de krypteras nästa gång de skrivs. Kan krypteringen inte användas skrivs inget nytt värde; känsliga data
+ * får aldrig falla tillbaka till klartext.
  */
 internal object SecureValue {
 
@@ -17,6 +17,6 @@ internal object SecureValue {
         else -> raw
     }
 
-    /** Värdet som ska sparas, krypterat om det går. */
-    fun write(plain: String): String = SecretCipher.encrypt(plain) ?: plain
+    /** Null means the caller must keep the previous value, not write plaintext. */
+    fun write(plain: String): String? = SecretCipher.encrypt(plain)
 }

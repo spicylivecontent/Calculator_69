@@ -17,6 +17,7 @@ object MiniJson {
         return try {
             val value = parser.readValue()
             parser.skipWhitespace()
+            require(parser.isFinished()) { "Trailing JSON content" }
             value
         } catch (_: Exception) {
             null
@@ -62,18 +63,22 @@ object MiniJson {
 
     private class Parser(private val input: String) {
         private var index = 0
+        private var depth = 0
+        fun isFinished(): Boolean = index == input.length
 
         fun readValue(): Any? {
             skipWhitespace()
             if (index >= input.length) throw IllegalStateException("tom JSON")
-            return when (val char = input[index]) {
+            require(depth < 64) { "JSON nesting limit exceeded" }
+            depth++
+            return try { when (val char = input[index]) {
                 '{' -> readObject()
                 '[' -> readArray()
                 '"' -> readString()
                 't', 'f' -> readBoolean()
                 'n' -> readNull()
                 else -> if (char == '-' || char.isDigit()) readNumber() else throw IllegalStateException("oväntat tecken: $char")
-            }
+            } } finally { depth-- }
         }
 
         fun skipWhitespace() {
@@ -148,16 +153,21 @@ object MiniJson {
                             'r' -> builder.append('\r')
                             't' -> builder.append('\t')
                             'u' -> {
-                                val hex = input.substring(index, (index + 4).coerceAtMost(input.length))
-                                index += hex.length
-                                builder.append(hex.toIntOrNull(16)?.toChar() ?: ' ')
+                                require(index + 4 <= input.length)
+                                val hex = input.substring(index, index + 4)
+                                require(hex.all { it in "0123456789abcdefABCDEF" })
+                                index += 4
+                                builder.append(hex.toInt(16).toChar())
                             }
 
-                            else -> builder.append(escape)
+                            else -> throw IllegalStateException("Invalid JSON escape")
                         }
                     }
 
-                    else -> builder.append(char)
+                    else -> {
+                        require(char >= ' ' ) { "Unescaped control character" }
+                        builder.append(char)
+                    }
                 }
             }
             throw IllegalStateException("ostängd sträng")
@@ -167,7 +177,9 @@ object MiniJson {
             val start = index
             if (peek() == '-') index++
             while (index < input.length && (input[index].isDigit() || input[index] in ".eE+-")) index++
-            return input.substring(start, index).toDoubleOrNull() ?: 0.0
+            val raw = input.substring(start, index)
+            require(Regex("-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?").matches(raw))
+            return raw.toDouble().also { require(it.isFinite()) }
         }
 
         private fun readBoolean(): Boolean {

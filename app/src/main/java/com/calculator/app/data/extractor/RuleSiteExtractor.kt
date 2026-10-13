@@ -15,7 +15,7 @@ internal class RuleSiteExtractor(private val rule: ScrapeRule) : SiteExtractor {
 
     override suspend fun search(query: String, page: Int): List<SearchResult> {
         val url = rule.searchUrlFor(query, page) ?: return emptyList()
-        val html = runCatching { Fetch.page(url) }.getOrNull() ?: return emptyList()
+        val html = Fetch.page(url) ?: return emptyList()
         if (html.isBlank()) return emptyList()
 
         val config = rule.toListingConfig()

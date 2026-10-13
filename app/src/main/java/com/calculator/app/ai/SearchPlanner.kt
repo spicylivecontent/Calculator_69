@@ -59,16 +59,17 @@ class SearchPlanner {
             .filter { it.isNotBlank() }
             .distinct()
 
+        val excluded = negatives.map { normalizeTerm(it) }.toSet()
         val positiveTerms = parsed.positives
             .map { canonicalTerm(it) }
-            .filter { it.isNotBlank() && normalizeTerm(it) !in negatives }
+            .filter { it.isNotBlank() && normalizeTerm(it) !in excluded }
             .distinct()
         val quotedPhrases = parsed.phrases
             .map { it.trim() }
-            .filter { it.isNotBlank() && normalizeTerm(it) !in negatives }
+            .filter { it.isNotBlank() && normalizeTerm(it) !in excluded }
             .distinct()
 
-        val primaryTerms = (positiveTerms + safeCategoryTerms).distinct().take(MAX_PRIMARY_TERMS)
+        val primaryTerms = (positiveTerms + safeCategoryTerms.filter { normalizeTerm(it) !in excluded }).distinct().take(MAX_PRIMARY_TERMS)
         val queries = mutableListOf<SearchQuery>()
         if (primaryTerms.isNotEmpty()) {
             queries.add(SearchQuery(text = primaryTerms.joinToString(" "), terms = primaryTerms, isPrimary = true))
@@ -77,9 +78,9 @@ class SearchPlanner {
         // Varianter i prioritetsordning: citat, valda kategorier, enskilda ord, synonymer.
         val variants = LinkedHashSet<String>()
         quotedPhrases.forEach { variants.add(it) }
-        safeCategoryTerms.forEach { variants.add(it) }
+        safeCategoryTerms.filter { normalizeTerm(it) !in excluded }.forEach { variants.add(it) }
         positiveTerms.filter { it.length >= MIN_VARIANT_LENGTH }.forEach { variants.add(it) }
-        parsed.synonymVariants.take(MAX_SYNONYM_VARIANTS).forEach { variants.add(it) }
+        parsed.synonymVariants.filter { normalizeTerm(it) !in excluded }.take(MAX_SYNONYM_VARIANTS).forEach { variants.add(it) }
 
         val primaryText = primaryTerms.joinToString(" ")
         for (variant in variants) {
@@ -124,8 +125,14 @@ class SearchPlanner {
         for (match in QUOTED_PATTERN.findAll(input)) {
             val phrase = match.groupValues.getOrNull(1)?.trim().orEmpty()
             if (phrase.length >= MIN_PHRASE_LENGTH) {
-                phrases.add(phrase)
-                for (index in match.range.first until (match.range.last + 1)) {
+                val before = working.substring(0, match.range.first)
+                val negation = Regex(
+                    "(?:^|\\s)(?:" + NEGATION_PREFIXES.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) } +
+                        ")\\s*$|(?:^|\\s)-$", RegexOption.IGNORE_CASE
+                ).find(before)
+                if (negation != null) negatives.add(phrase) else phrases.add(phrase)
+                val start = negation?.range?.first ?: match.range.first
+                for (index in start until (match.range.last + 1)) {
                     working.setCharAt(index, ' ')
                 }
             }

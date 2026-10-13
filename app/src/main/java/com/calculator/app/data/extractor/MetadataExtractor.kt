@@ -280,12 +280,8 @@ object MetadataExtractor {
     fun parseIsoDuration(raw: String?): Int? {
         val value = raw?.trim()?.uppercase(Locale.ROOT) ?: return null
         if (!value.startsWith("P")) return null
-        val match = ISO_DURATION.find(value) ?: return null
-        val hours = match.groupValues.getOrNull(1)?.toIntOrNull() ?: 0
-        val minutes = match.groupValues.getOrNull(2)?.toIntOrNull() ?: 0
-        val seconds = match.groupValues.getOrNull(3)?.toIntOrNull() ?: 0
-        val total = hours * 3_600 + minutes * 60 + seconds
-        return total.takeIf { it > 0 }
+        val seconds = runCatching { java.time.Duration.parse(value).seconds }.getOrNull() ?: return null
+        return seconds.takeIf { it in 1..Int.MAX_VALUE.toLong() }?.toInt()
     }
 
     private fun cleanText(raw: String, maxChars: Int): String =
@@ -297,8 +293,6 @@ object MetadataExtractor {
         values.firstOrNull { !it.isNullOrBlank() }?.trim()
 
     private val WHITESPACE = Regex("\\s+")
-
-    private val ISO_DURATION = Regex("^P(?:\\d+D|\\d+W)?T?(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?$")
 
     private val DESCRIPTION_SELECTORS = listOf(
         "[itemprop=description]",

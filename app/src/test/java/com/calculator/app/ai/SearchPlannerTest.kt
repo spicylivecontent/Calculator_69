@@ -135,6 +135,21 @@ class SearchPlannerTest {
     }
 
     @Test
+    fun quotedNegativesNeverBecomePositiveSearches() {
+        for (input in listOf("kitchen without \"black hair\"", "kitchen -\"black hair\"")) {
+            val plan = planner.plan(input)
+            assertEquals(listOf("black hair"), plan.negatives)
+            assertTrue(plan.queries.all { it.text == "kitchen" })
+        }
+    }
+
+    @Test
+    fun exclusionsAlsoApplyToCategoriesAndSynonymVariants() {
+        val plan = planner.plan("brunette", categoryTerms = listOf("Kitchen"), extraNegatives = listOf("KITCHEN", "brown hair"))
+        assertTrue(plan.queries.all { it.text == "brunette" })
+    }
+
+    @Test
     fun stopWordsAreIgnored() {
         val plan = planner.plan("blonde and kitchen")
 

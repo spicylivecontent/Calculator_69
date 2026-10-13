@@ -42,9 +42,8 @@ abstract class AppDatabase : RoomDatabase() {
          * Öppnar (och skapar vid behov) databasen.
          *
          * Är SQLCipher och Android Keystore tillgängliga krypteras hela filen med en
-         * slumpad nyckel som förvaras krypterad i Keystore. Går det inte att få fram en
-         * nyckel används i stället den gamla okrypterade filen, så att appen aldrig blir
-         * oanvändbar på grund av krypteringen.
+         * slumpad nyckel som förvaras krypterad i Keystore. Om krypteringen inte
+         * fungerar avbryts öppningen; UI visar ett fel utan att skriva klartext.
          */
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -53,16 +52,17 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         private fun build(context: Context): AppDatabase {
-            val passphrase = if (SqlCipherLoader.load()) VaultDatabaseKey.passphrase(context) else null
+            check(SqlCipherLoader.load()) { "SQLCipher unavailable" }
+            val passphrase = checkNotNull(VaultDatabaseKey.passphrase(context)) { "Vault key unavailable" }
             val plan = VaultDatabasePlan.layout(
-                encryptionAvailable = passphrase != null,
+                encryptionAvailable = true,
                 encryptedExists = context.getDatabasePath(VaultDatabasePlan.ENCRYPTED_NAME).exists(),
                 plainExists = context.getDatabasePath(VaultDatabasePlan.PLAIN_NAME).exists()
             )
             layout = plan
 
             val builder = Room.databaseBuilder(context, AppDatabase::class.java, plan.databaseName)
-            if (plan.encrypted && passphrase != null) {
+            if (plan.encrypted) {
                 builder.openHelperFactory(SupportOpenHelperFactory(passphrase, null, true))
             }
             return builder.build()

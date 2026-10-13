@@ -133,6 +133,32 @@ private fun VaultContent(
     onChangeDecoyPin: (String) -> Boolean
 ) {
     val context = LocalContext.current
+    // Validate storage before constructing ViewModels whose Room flows would otherwise
+    // fail asynchronously. Never hide a missing key by creating a plaintext vault.
+    val storage by androidx.compose.runtime.produceState<Result<com.calculator.app.data.AppDatabase>?>(null) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                com.calculator.app.data.AppDatabase.getInstance(context).also { it.openHelper.writableDatabase }
+            }
+        }
+    }
+    val storageState = storage
+    if (storageState == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            androidx.compose.material3.CircularProgressIndicator()
+        }
+        return
+    }
+    if (storageState.isFailure) {
+        AlertDialog(
+            onDismissRequest = onLock,
+            title = { Text("Lagringen kunde inte öppnas") },
+            text = { Text("Krypteringen eller databasnyckeln är inte tillgänglig. Inga data har raderats och ingen okrypterad databas skapas. Försök starta om appen.") },
+            confirmButton = { TextButton(onClick = onLock) { Text("Lås") } }
+        )
+        return
+    }
+
     val application = remember(context) { context.applicationContext as Application }
 
     var currentTab by remember { mutableStateOf(VaultTab.HOME) }
@@ -298,6 +324,7 @@ private fun VaultContent(
                     presets = presets,
                     history = recentPlaybacks,
                     onResume = { entry -> searchViewModel.playRecent(entry) },
+                    onPlayVideo = { video -> searchViewModel.playSavedVideo(video) },
                     onClearHistory = { searchViewModel.clearPlaybackHistory() },
                     onUsePreset = { preset ->
                         searchViewModel.useSearchPreset(preset)

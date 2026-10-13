@@ -83,7 +83,8 @@ class PlaybackStore(context: Context) {
         for ((id, value) in positions) {
             json.put(id, JSONArray().put(value.first).put(value.second))
         }
-        prefs.edit().putString(KEY_POSITIONS, SecureValue.write(json.toString())).apply()
+        val encrypted = SecureValue.write(json.toString()) ?: return
+        prefs.edit().putString(KEY_POSITIONS, encrypted).apply()
     }
 
     /** Flyttar gamla `pos_<id>`/`dur_<id>`-nycklar till den krypterade kartan, en gång. */
@@ -196,7 +197,8 @@ class PlaybackStore(context: Context) {
                     .put("at", entry.updatedAt)
             )
         }
-        prefs.edit().putString(KEY_ENTRIES, SecureValue.write(array.toString())).apply()
+        val encrypted = SecureValue.write(array.toString()) ?: return
+        prefs.edit().putString(KEY_ENTRIES, encrypted).apply()
     }
 
     private companion object {

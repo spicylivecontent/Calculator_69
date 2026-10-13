@@ -88,6 +88,26 @@ class PipelineMockWebServerTest {
     """.trimIndent()
 
     @Test
+    fun signedMediaQueriesAndUserAgentArePreserved() {
+        server.enqueue(MockResponse().setBody("#EXTM3U\n"))
+        val mediaClient = client.newBuilder().addInterceptor(com.calculator.app.network.PrivacyInterceptor()).build()
+        val request = okhttp3.Request.Builder().url(server.url("/master.m3u8?source=token&ref=signed"))
+            .header("User-Agent", "Player test agent")
+            .tag(com.calculator.app.network.MediaRequest::class.java, com.calculator.app.network.MediaRequest)
+            .build()
+        mediaClient.newCall(request).execute().use { assertTrue(it.isSuccessful) }
+        val recorded = server.takeRequest()
+        assertEquals("/master.m3u8?source=token&ref=signed", recorded.path)
+        assertEquals("Player test agent", recorded.getHeader("User-Agent"))
+    }
+
+    @Test
+    fun oversizedChunkedBodyIsRejectedWithoutTruncatingItIntoValidHtml() {
+        server.enqueue(MockResponse().setChunkedBody("x".repeat(6000001), 8192))
+        assertNull(runBlocking { Fetch.page(server.url("/large").toString(), client = client, attempts = 1) })
+    }
+
+    @Test
     fun listingPageOverHttpsBecomesResults() {
         server.enqueue(MockResponse().setBody(listingHtml).setHeader("Content-Type", "text/html; charset=utf-8"))
 

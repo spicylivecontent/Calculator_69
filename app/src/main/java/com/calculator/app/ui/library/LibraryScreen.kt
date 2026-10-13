@@ -80,7 +80,8 @@ fun LibraryScreen(
     onRemoveWatchLater: (String) -> Unit,
     onRemoveDislikeRule: (DislikeRuleEntity) -> Unit,
     onRemovePreset: (SearchPresetEntity) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onPlayVideo: (VideoEntity) -> Unit = {}
 ) {
     var section by remember { mutableStateOf(LibrarySection.OVERVIEW) }
 
@@ -176,7 +177,7 @@ fun LibraryScreen(
                         item { EmptyRow("Inga favoriter ännu") }
                     } else {
                         items(favorites, key = { it.id }) { video ->
-                            VideoEntityCard(video) { onRemoveFavorite(video.id) }
+                            VideoEntityCard(video, onPlay = { onPlayVideo(video) }, onRemove = { onRemoveFavorite(video.id) })
                         }
                     }
                 }
@@ -186,7 +187,7 @@ fun LibraryScreen(
                         item { EmptyRow("Inget i Watch Later") }
                     } else {
                         items(watchLater, key = { it.id }) { video ->
-                            VideoEntityCard(video) { onRemoveWatchLater(video.id) }
+                            VideoEntityCard(video, onPlay = { onPlayVideo(video) }, onRemove = { onRemoveWatchLater(video.id) })
                         }
                     }
                 }
@@ -260,9 +261,9 @@ private fun LibraryOverviewItem(
 }
 
 @Composable
-private fun VideoEntityCard(video: VideoEntity, onRemove: () -> Unit) {
+private fun VideoEntityCard(video: VideoEntity, onPlay: () -> Unit, onRemove: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onPlay),
         colors = CardDefaults.cardColors(containerColor = VaultSurface),
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, VaultBorder)

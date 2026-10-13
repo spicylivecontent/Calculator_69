@@ -113,7 +113,8 @@ class AppPreferences(context: Context) {
         if (cleaned.isBlank()) return
         val updated = (listOf(cleaned) + searchHistory().filterNot { it.equals(cleaned, ignoreCase = true) })
             .take(MAX_HISTORY)
-        prefs.edit().putString(KEY_HISTORY, SecureValue.write(updated.joinToString(SEPARATOR))).apply()
+        val encrypted = SecureValue.write(updated.joinToString(SEPARATOR)) ?: return
+        prefs.edit().putString(KEY_HISTORY, encrypted).apply()
     }
 
     fun clearSearchHistory() = prefs.edit().remove(KEY_HISTORY).apply()

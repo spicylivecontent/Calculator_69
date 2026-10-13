@@ -1,6 +1,7 @@
 package com.calculator.app.data.extractor
 
 import com.calculator.app.data.model.SearchResult
+import kotlinx.coroutines.CancellationException
 
 interface SiteExtractor {
     val siteName: String
@@ -60,6 +61,8 @@ abstract class BaseSiteExtractor : SiteExtractor {
     suspend fun responds(query: String = "amateur"): Boolean =
         try {
             search(query, 1).isNotEmpty()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             false
         }

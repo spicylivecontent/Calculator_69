@@ -119,6 +119,17 @@ class CalculatorUiTest {
         compose.onNodeWithText("1357 = 1357").assertDoesNotExist()
     }
 
+    @Test
+    fun negativeNumbersAndRecoveryAfterDivisionByZeroWork() {
+        configurePins()
+        listOf("-", "3", "*", "-", "2", "=").forEach { press(it) }
+        compose.onNodeWithTag(RESULT_TAG).assertTextEquals("6")
+        listOf("/", "0", "=").forEach { press(it) }
+        compose.onNodeWithTag(RESULT_TAG).assertTextEquals("Error")
+        listOf("7", "=", "+", "1", "=").forEach { press(it) }
+        compose.onNodeWithTag(RESULT_TAG).assertTextEquals("8")
+    }
+
     // --- hjälpare ---
 
     private fun configurePins(main: String = MAIN_PIN, reserve: String = RESERVE_PIN) {

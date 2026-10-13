@@ -6,7 +6,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import com.calculator.app.security.PinStore
-import java.util.Locale
 import net.objecthunter.exp4j.ExpressionBuilder
 
 enum class VaultMode {
@@ -77,7 +76,8 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
                 input += action.number
             }
             is CalculatorAction.Operation -> {
-                if (input.isNotEmpty() && !isLastCharOperator() && result != ERROR_RESULT) {
+                val unaryMinus = action.operation == "-" && (input.isEmpty() || input.lastOrNull() in listOf('+', '*', '/', '%'))
+                if (result != ERROR_RESULT && (unaryMinus || (input.isNotEmpty() && !isLastCharOperator()))) {
                     input += action.operation
                     result = ""
                     justCalculated = false
@@ -158,20 +158,7 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun formatResult(value: Double): String {
-        if (!value.isFinite()) return ERROR_RESULT
-
-        if (value % 1.0 == 0.0 &&
-            value >= Long.MIN_VALUE.toDouble() &&
-            value < Long.MAX_VALUE.toDouble()
-        ) {
-            return value.toLong().toString()
-        }
-
-        return String.format(Locale.US, "%.8f", value)
-            .trimEnd('0')
-            .trimEnd('.')
-    }
+    private fun formatResult(value: Double): String = CalculatorResultFormatter.format(value)
 
     private fun clearCalculator() {
         input = ""

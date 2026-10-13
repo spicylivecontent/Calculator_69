@@ -49,6 +49,13 @@ class MetadataExtractorTest {
     """.trimIndent()
 
     @Test
+    fun isoDurationsIncludeDaysAndRejectOverflow() {
+        assertEquals(90000, MetadataExtractor.parseIsoDuration("P1DT1H"))
+        assertNull(MetadataExtractor.parseIsoDuration("PT999999999H"))
+        assertNull(MetadataExtractor.parseIsoDuration("P1M"))
+    }
+
+    @Test
     fun parsesTitleDescriptionTagsAndQuality() {
         val metadata = MetadataExtractor.parse(richPage, "https://mytube.example/video/abc")
 
