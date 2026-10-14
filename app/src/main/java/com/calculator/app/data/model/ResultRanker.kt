@@ -81,7 +81,10 @@ object ResultRanker {
     )
 
     private fun rareTermMatches(haystack: String, rare: String): Boolean =
-        haystack.contains(rare) || RARE_TERM_ALIASES[rare].orEmpty().any { haystack.contains(it) }
+        SearchTextMatcher.containsTerm(haystack, rare) ||
+            RARE_TERM_ALIASES[rare].orEmpty().any { alias ->
+                SearchTextMatcher.containsTerm(haystack, alias)
+            }
 
     fun normalizeTitle(title: String): String =
         title.lowercase(Locale.ROOT)
