@@ -30,8 +30,14 @@ class MetadataCache(
     fun get(detailUrl: String): VideoMetadata? {
         val entry = map[detailUrl] ?: return null
         if (clock() - entry.storedAt > ttlMs) {
-            map.remove(detailUrl)
-            return null
+            // Do not delete a fresh value concurrently written for the same URL.
+            map.remove(detailUrl, entry)
+            val replacement = map[detailUrl] ?: return null
+            if (clock() - replacement.storedAt > ttlMs) {
+                map.remove(detailUrl, replacement)
+                return null
+            }
+            return replacement.metadata
         }
         return entry.metadata
     }
