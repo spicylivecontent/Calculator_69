@@ -20,7 +20,7 @@ APK-filen hamnar i `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Tester
 
-Projektet har 170 JVM-testfall i 21 filer. De täcker logik, parsning och nätverkskedjan
+Projektets JVM-tester täcker logik, biometriska callbacks, parsning och nätverkskedjan
 mot en lokal MockWebServer och kräver varken en Android-enhet eller internet:
 
 ```bash
@@ -38,9 +38,9 @@ WebView-spelarens helskärmshost. Kör dem på en ansluten enhet eller emulator:
 ## Bygg APK via GitHub Actions
 
 Workflowen **Build APK** körs vid varje push och kan startas manuellt från **Actions**-fliken.
-Den kör JVM-tester, Android lint, APK-bygge och kompilering av de instrumenterade testerna.
+Den kör JVM-tester, Android lint, debug- och release-byggen samt kompilering av de instrumenterade testerna.
 Efteråt finns APK:n i artifacten **Calculator-debug-apk** och test-/lintrapporter i
-**unit-and-lint-reports**. Workflowen **Android UI tests** kör de 17 instrumenterade
+**unit-and-lint-reports**, tillsammans med exporterade Room-scheman, R8-mappning och bygglogg. Workflowen **Android UI tests** kör de 17 instrumenterade
 testerna på en API 34-emulator när appkoden ändras och sparar
 **instrumented-test-report**. Bygg- och testfel visas även som annotations och i jobbets
 summary.
@@ -103,3 +103,11 @@ Eporner, SpankBang, HQPorner, XVideos, XNXX, xHamster, Pornhub, Beeg, YouPorn, P
 Uppspelningen sker på sajternas egna sidor, så appen kan inte påverka vilken kvalitet eller vilka spelarkontroller en sajt erbjuder – men allt som går att spela upp går att titta på, oavsett om en separat ström kan extraheras eller inte. Annonsblockeringen är best-effort: nya annonsnätverk dyker upp löpande.
 
 Scraping, inläsning och annonsblockering kan sluta fungera när sajterna ändrar sina sidor. Kontrollera att du följer lokal lagstiftning och respektive sajts villkor.
+
+## Underhåll och release
+
+Release använder R8 och resurskrympning; debug är fortfarande ominifierad.
+Room-scheman exporteras via KSP utan att databasversionen ändras.
+Se [underhållsgranskningen](UNDERHALL.md) för hanteringen av Groks ofärdiga
+bygg-/säkerhetsändringar och de fem beroendeuppdateringarna som ännu inte är
+verifierade.

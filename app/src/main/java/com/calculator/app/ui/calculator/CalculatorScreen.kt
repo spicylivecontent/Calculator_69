@@ -1,9 +1,6 @@
 package com.calculator.app.ui.calculator
 
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.biometric.BiometricManager
-import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -26,9 +23,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.calculator.app.security.BiometricUnlock
 import com.calculator.app.ui.vault.VaultScreen
 
 @Composable
@@ -43,14 +40,26 @@ fun CalculatorScreen(
         viewModel.lockVault()
     }
 
-    // Biometrisk prompt
-    LaunchedEffect(viewModel.shouldShowBiometric) {
-        if (viewModel.shouldShowBiometric && activity != null) {
-            showBiometricPrompt(
-                activity = activity,
-                onSuccess = { viewModel.onBiometricSuccess() },
-                onFailedOrCancelled = { viewModel.onBiometricFailedOrCancelled() }
-            )
+    // Cancel prompts owned by a disposed screen. Late success callbacks must not
+    // reopen a vault after cancellation, locking, or activity recreation.
+    DisposableEffect(viewModel.shouldShowBiometric, activity) {
+        val prompt = if (viewModel.shouldShowBiometric) {
+            if (activity == null) {
+                viewModel.onBiometricFailedOrCancelled()
+                null
+            } else {
+                BiometricUnlock.prompt(
+                    activity = activity,
+                    onSuccess = viewModel::onBiometricSuccess,
+                    onFailedOrCancelled = viewModel::onBiometricFailedOrCancelled
+                )
+            }
+        } else null
+        onDispose {
+            if (prompt != null) {
+                viewModel.onBiometricFailedOrCancelled()
+                prompt.invoke()
+            }
         }
     }
 
@@ -103,51 +112,6 @@ private fun PinStorageErrorScreen() {
             fontSize = 14.sp,
             textAlign = TextAlign.Center
         )
-    }
-}
-
-private fun showBiometricPrompt(
-    activity: FragmentActivity,
-    onSuccess: () -> Unit,
-    onFailedOrCancelled: () -> Unit
-) {
-    val executor = ContextCompat.getMainExecutor(activity)
-
-    val biometricPrompt = BiometricPrompt(
-        activity,
-        executor,
-        object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                onSuccess()
-            }
-
-            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                onFailedOrCancelled()
-            }
-
-            override fun onAuthenticationFailed() {}
-        }
-    )
-
-    val promptInfo = BiometricPrompt.PromptInfo.Builder()
-        .setTitle("Bekräfta identitet")
-        .setSubtitle("Använd fingeravtryck eller ansikte för att öppna vaulten")
-        .setNegativeButtonText("Avbryt")
-        .build()
-
-    val biometricManager = BiometricManager.from(activity)
-    when (biometricManager.canAuthenticate(
-        BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
-    )) {
-        BiometricManager.BIOMETRIC_SUCCESS -> biometricPrompt.authenticate(promptInfo)
-        else -> {
-            Toast.makeText(
-                activity,
-                "Aktivera biometrisk autentisering på enheten för att öppna vaulten.",
-                Toast.LENGTH_LONG
-            ).show()
-            onFailedOrCancelled()
-        }
     }
 }
 
