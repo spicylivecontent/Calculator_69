@@ -109,6 +109,14 @@ class SearchPlannerTest {
     }
 
     @Test
+    fun exactMultiTermQueryIsFirstWhenRareTermsArePresent() {
+        val plan = planner.plan("solo latina atm")
+
+        assertEquals("solo latina atm", plan.queries.first().text)
+        assertTrue(plan.queries.first().isPrimary)
+    }
+
+    @Test
     fun numberOfQueriesIsCapped() {
         val plan = planner.plan("blonde brunette redhead kitchen outdoor", maxQueries = 2)
 
