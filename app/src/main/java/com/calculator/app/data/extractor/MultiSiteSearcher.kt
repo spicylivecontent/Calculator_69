@@ -136,8 +136,9 @@ class MultiSiteSearcher(
                 siteId = site.info.id,
                 label = site.info.label,
                 count = site.results.size,
-                ok = site.results.isNotEmpty() || site.failure == null,
-                message = site.failure.takeIf { site.results.isEmpty() }
+                // Partial results are useful, but a failed query variant must remain visible.
+                ok = site.failure == null,
+                message = site.failure
             )
         }
 
