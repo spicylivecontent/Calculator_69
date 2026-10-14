@@ -6,7 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /** En verifierad, spelbar ström med information om kvaliteten. */
@@ -38,22 +37,15 @@ object StreamResolver {
     private const val PLAYER_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
 
-    private data class CacheEntry(val stream: ResolvedStream, val expiresAt: Long)
+    private val cache = StreamCache(
+        ttlMs = CACHE_TTL_MS,
+        maxEntries = MAX_CACHE_ENTRIES
+    )
 
-    private val cache = ConcurrentHashMap<String, CacheEntry>()
-
-    fun cached(detailUrl: String): ResolvedStream? {
-        val entry = cache[detailUrl] ?: return null
-        if (entry.expiresAt < System.currentTimeMillis()) {
-            cache.remove(detailUrl)
-            return null
-        }
-        return entry.stream
-    }
+    fun cached(detailUrl: String): ResolvedStream? = cache.get(detailUrl)
 
     fun remember(detailUrl: String, stream: ResolvedStream) {
-        if (cache.size > MAX_CACHE_ENTRIES) cache.clear()
-        cache[detailUrl] = CacheEntry(stream, System.currentTimeMillis() + CACHE_TTL_MS)
+        cache.put(detailUrl, stream)
     }
 
     /** Tömmer hela strömcachen (används vid panik/lås). */
