@@ -15,10 +15,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import com.calculator.app.network.NetworkCondition
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Information om en sajt som används i gränssnittet. */
 data class SiteInfo(val id: String, val label: String, val baseUrl: String? = null)
 
-/** Hur det gick för en sajt i en sökning. */
 data class SiteSearchReport(
     val siteId: String,
     val label: String,
@@ -32,25 +30,12 @@ data class SearchOutcome(
     val reports: List<SiteSearchReport>
 )
 
-/**
- * Söker parallellt på alla valda sajter med flera frågevarianter.
- *
- * Varje (sajt, fråga, sida) hämtas en gång och alla träffar slås ihop med
- * dubblettrensning, vilket gör att användaren får med allt som matchar
- * även när sajterna tolkar flerordssökningar som "alla ord måste finnas".
- */
 class MultiSiteSearcher(
     private val extractors: List<SiteExtractor> = defaultExtractors(),
-    /** Nätverksläget styr hur många anrop som körs samtidigt och hur länge en sajt får ta. */
     private val network: NetworkCondition = NetworkCondition.Default,
-    /** Regler från nätet. Tomma regler betyder att allt är inbyggt. */
     rules: ScrapeRules = ScrapeRules.Empty
 ) {
 
-    /**
-     * Sajterna som faktiskt används: en hämtad regel ersätter den inbyggda regeln för
-     * samma sajt, och regler för nya sajter läggs till i slutet av listan.
-     */
     private val activeExtractors: List<SiteExtractor> = buildList {
         extractors.forEach { builtIn ->
             val rule = rules.forSite(builtIn.siteName)
@@ -61,13 +46,8 @@ class MultiSiteSearcher(
 
     val siteInfos: List<SiteInfo> = activeExtractors.map { SiteInfo(it.siteName, it.label, it.baseUrl) }
 
-    /** Sant när en sajt tog för lång tid och hoppades över. */
     private fun timeoutMessage(millis: Long): String = "Tog för lång tid (>${millis / 1000} s) – hoppades över"
 
-    /**
-     * En sajt får aldrig stoppa resten av sökningen: varje hämtning har en egen
-     * tidsgräns och ett fel på en sajt rapporteras i stället för att kasta vidare.
-     */
     private suspend fun searchOne(extractor: SiteExtractor, query: String, page: Int): List<SearchResult>? =
         withTimeoutOrNull(network.siteTimeoutMs) {
             extractor.search(query, page)
@@ -103,7 +83,6 @@ class MultiSiteSearcher(
                         try {
                             val found = searchOne(extractor, query.text, page)
                             if (found == null) {
-                                // Tidsgränsen slog till: hoppa över frågan men fortsätt med sajtens övriga frågor.
                                 failure = failure ?: timeoutMessage(network.siteTimeoutMs)
                                 continue
                             }
@@ -144,20 +123,13 @@ class MultiSiteSearcher(
         SearchOutcome(results = perSite.flatMap { it.results }, reports = reports)
     }
 
-    /**
-     * Läser in all information om träffarna (rubrik, taggar, kategorier, medverkande,
-     * kvalitet, längd och beskrivning) från deras detaljsidor och rapporterar varje
-     * träff löpande via [onEnriched] så att listan fylls på medan hämtningen pågår.
-     *
-     * Sidor som inte svarar eller där innehållet tagits bort markeras som ospelbara.
-     */
     suspend fun enrichMetadata(
         candidates: List<SearchResult>,
-        concurrency: Int = VERIFICATION_CONCURRENCY,
+        concurrency: Int = network.enrichmentParallelism.coerceAtLeast(1),
         onEnriched: suspend (SearchResult) -> Unit = {}
     ): Int = coroutineScope {
         if (candidates.isEmpty()) return@coroutineScope 0
-        val semaphore = Semaphore(concurrency.coerceAtLeast(1))
+        val semaphore = Semaphore(concurrency)
         val enriched = AtomicInteger()
 
         candidates.map { candidate ->
@@ -211,7 +183,6 @@ class MultiSiteSearcher(
         enriched.get()
     }
 
-    /** Tömmer den korta streamcachen, t.ex. när en stream slutat fungera. */
     fun invalidateStream(detailUrl: String? = null) = StreamResolver.invalidate(detailUrl)
 
     private data class SiteResult(
@@ -235,7 +206,8 @@ class MultiSiteSearcher(
             PornhubExtractor(),
             BeegExtractor(),
             YouPornExtractor(),
-            PornTrexExtractor()
+            PornTrexExtractor(),
+            LuxureTvExtractor()
         )
     }
 }
