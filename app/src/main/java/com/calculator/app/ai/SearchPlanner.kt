@@ -19,7 +19,9 @@ class SearchPlanner {
         val negatives: List<String>,
         val terms: List<String>,
         val explanation: String,
-        val blockedReason: String? = null
+        val blockedReason: String? = null,
+        /** Canonical positive terms that must be present in enriched metadata for strict matching. */
+        val requiredTerms: List<String> = emptyList()
     ) {
         val isEmpty: Boolean get() = queries.isEmpty()
     }
@@ -146,7 +148,8 @@ class SearchPlanner {
             queries = queries,
             negatives = negatives,
             terms = queries.flatMap { it.terms }.distinct(),
-            explanation = buildExplanation(queries, negatives)
+            explanation = buildExplanation(queries, negatives),
+            requiredTerms = primaryTerms
         )
     }
 
