@@ -43,6 +43,12 @@ internal class StreamCache(
         entries.remove(key)
     }
 
+    /** Removes only the value observed by the caller, not a concurrent replacement. */
+    @Synchronized
+    fun remove(key: String, expected: ResolvedStream) {
+        if (entries[key]?.stream == expected) entries.remove(key)
+    }
+
     @Synchronized
     fun clear() {
         entries.clear()
