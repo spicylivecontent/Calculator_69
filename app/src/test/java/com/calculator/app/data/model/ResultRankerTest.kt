@@ -170,6 +170,31 @@ class ResultRankerTest {
     }
 
     @Test
+    fun strictFiltersAndCoverageUseWholeTermsAcrossAllMetadata() {
+        val falsePositive = result(
+            id = "false-positive",
+            title = "Classic scatterbrain interview",
+            tags = listOf("classic style"),
+            description = "A general conversation"
+        )
+        val truePositive = result(
+            id = "true-positive",
+            title = "Scat play",
+            tags = listOf("classic")
+        )
+
+        assertFalse(ResultRanker.matchesEverything(falsePositive, listOf("ass")))
+        assertFalse(ResultRanker.matchesEverything(falsePositive, listOf("scat")))
+        assertEquals(0f, falsePositive.coverageOf(listOf("ass", "scat")), 0.001f)
+        assertEquals(1f, truePositive.coverageOf(listOf("scat")), 0.001f)
+        assertTrue(ResultRanker.searchScraped(listOf(falsePositive), "scat").isEmpty())
+        assertEquals(
+            listOf("true-positive"),
+            ResultRanker.searchScraped(listOf(falsePositive, truePositive), "scat").map { it.id }
+        )
+    }
+
+    @Test
     fun matchesEverythingChecksTagsAndDescription() {
         val tagged = result(
             "tagged",
