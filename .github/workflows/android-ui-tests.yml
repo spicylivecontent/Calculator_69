@@ -38,7 +38,8 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install SDK-paket (plattform, byggverktyg, emulator)
-        run: sdkmanager --install "platforms;android-37" "build-tools;36.0.0" "platform-tools" "emulator"
+        # Sedan API 37 publiceras plattformarna med minor-suffix (android-37.0).
+        run: sdkmanager --install "platforms;android-37.0" "build-tools;36.0.0" "platform-tools" "emulator"
 
       - name: Enable KVM
         run: |
