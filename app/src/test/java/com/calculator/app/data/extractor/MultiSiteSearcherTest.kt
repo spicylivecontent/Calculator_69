@@ -48,4 +48,27 @@ class MultiSiteSearcherTest {
         assertFalse(report.ok)
         assertTrue(report.message.orEmpty().contains("variant failed"))
     }
+
+    @Test
+    fun offlineSearchReturnsImmediatelyWithoutCallingSites() = runBlocking {
+        val extractor = object : SiteExtractor {
+            override val siteName = "offline-test"
+            override val baseUrl = "https://example.com"
+
+            override suspend fun search(query: String, page: Int): List<SearchResult> {
+                throw AssertionError("Extractor must not be called while offline")
+            }
+        }
+
+        val outcome = MultiSiteSearcher(
+            extractors = listOf(extractor),
+            network = NetworkCondition(isMetered = false, isWifi = false, isOffline = true)
+        ).search(queries = listOf(SearchQuery("query", listOf("query"))))
+
+        assertTrue(outcome.results.isEmpty())
+        val report = outcome.reports.single()
+        assertEquals(0, report.count)
+        assertFalse(report.ok)
+        assertEquals("Ingen nätverksanslutning", report.message)
+    }
 }
