@@ -208,8 +208,7 @@ object ResultRanker {
     fun matchesEverything(result: SearchResult, terms: List<String>): Boolean {
         val wanted = terms.map { it.trim() }.filter { it.isNotEmpty() }
         if (wanted.isEmpty()) return true
-        val haystack = result.searchableText.lowercase(Locale.ROOT)
-        return wanted.all { haystack.contains(it.lowercase(Locale.ROOT)) }
+        return wanted.all { SearchTextMatcher.containsTerm(result.searchableText, it) }
     }
 
     fun requireRareMatches(results: List<SearchResult>, terms: List<String>): List<SearchResult> {
@@ -226,8 +225,7 @@ object ResultRanker {
         if (terms.isEmpty()) return results
         return results
             .filter { result ->
-                val haystack = normalizeTitle(result.searchableText)
-                terms.any { haystack.contains(it) } ||
+                terms.any { SearchTextMatcher.containsTerm(result.searchableText, it) } ||
                     semanticScoreFor(result, terms) >= SEMANTIC_SEARCH_MIN_SCORE
             }
             .map { result -> result.copy(relevance = relevanceFor(result, terms)) }
