@@ -56,6 +56,22 @@ class ExtractorSupportTest {
     }
 
     @Test
+    fun titleAndDurationCanBeReadFromDataAttributes() {
+        val html = """
+            <div class="video-card" data-duration="01:25">
+              <a href="/video/xyz789" data-title="A title stored only in data-title">
+                <img data-src="/thumb.jpg" alt="thumbnail">
+              </a>
+            </div>
+        """.trimIndent()
+
+        val result = ExtractorSupport.parseListings(html, config).single()
+        assertEquals("A title stored only in data-title", result.title)
+        assertEquals("01:25", result.duration)
+        assertEquals(85, result.durationSeconds)
+    }
+
+    @Test
     fun emptyOrUnrelatedHtmlGivesNoResults() {
         assertTrue(ExtractorSupport.parseListings("", config).isEmpty())
         assertTrue(ExtractorSupport.parseListings("<html><body>Inget här</body></html>", config).isEmpty())
