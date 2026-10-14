@@ -26,14 +26,14 @@ data class ListingConfig(
     companion object {
         val DEFAULT_TITLE_SELECTORS = listOf(
             "p.title", "a.title", ".title", ".video-title", ".video-thumb-info__name",
-            ".name", "span.name", "h3", "h2", "strong", "p"
+            ".name", "span.name", "[itemprop=name]", "h3", "h2", "strong", "p"
         )
         val DEFAULT_THUMB_ATTRIBUTES = listOf(
             "data-src", "data-original", "data-thumb", "data-thumbnail", "data-mediumthumb",
             "data-lazy-src", "data-image", "src"
         )
         val DEFAULT_DURATION_SELECTORS = listOf(
-            ".duration", "[class*=duration]", ".dur", ".length", ".time", "[class*=time]", "var"
+            ".duration", "[class*=duration]", "[itemprop=duration]", "[data-duration]", "[data-length]", ".dur", ".length", ".time", "[class*=time]", "var"
         )
         const val DEFAULT_LIMIT = 36
     }
@@ -67,9 +67,13 @@ object ExtractorSupport {
         val doc = Jsoup.parse(html, config.baseUrl)
         val results = LinkedHashMap<String, SearchResult>()
 
-        for (anchor in doc.select("a[href]")) {
-            val href = anchor.attr("href")
-            if (href.isBlank() || href.startsWith("#") || href.startsWith("javascript")) continue
+        // Some responsive/JS-heavy templates store the detail URL on the card instead
+        // of a real anchor. Validate these exactly like ordinary hrefs before accepting them.
+        for (anchor in doc.select("a[href], [data-href], [data-url], [data-video-url]")) {
+            val href = listOf("href", "data-href", "data-video-url", "data-url")
+                .firstNotNullOfOrNull { attribute -> anchor.attr(attribute).trim().takeIf { it.isNotBlank() } }
+                ?: continue
+            if (href.startsWith("#") || href.startsWith("javascript", ignoreCase = true)) continue
             if (config.requireHrefContains != null && !href.contains(config.requireHrefContains)) continue
 
             val match = config.hrefPattern.find(href) ?: continue
@@ -137,9 +141,11 @@ object ExtractorSupport {
         val config = genericConfig(siteName, baseUrl)
         val results = LinkedHashMap<String, SearchResult>()
 
-        for (anchor in doc.select("a[href]")) {
+        for (anchor in doc.select("a[href], [data-href], [data-url], [data-video-url]")) {
             if (results.size >= limit) break
-            val href = anchor.attr("href").trim()
+            val href = listOf("href", "data-href", "data-video-url", "data-url")
+                .firstNotNullOfOrNull { attribute -> anchor.attr(attribute).trim().takeIf { it.isNotBlank() } }
+                ?: continue
             if (!looksLikeVideoHref(href)) continue
 
             val detailUrl = StreamSelection.normalize(href, baseUrl) ?: continue
@@ -213,14 +219,27 @@ object ExtractorSupport {
 
     private fun titleFrom(anchor: Element, container: Element, config: ListingConfig): String? {
         val candidates = mutableListOf<String>()
-        anchor.attr("title").takeIf { it.isNotBlank() }?.let { candidates.add(it) }
-        for (selector in config.titleSelectors) {
-            container.selectFirst(selector)?.text()?.takeIf { it.isNotBlank() }?.let { candidates.add(it) }
+        // Many sites keep the useful title in attributes while the visible link is only a thumbnail.
+        listOf("title", "data-title", "aria-label", "data-name").forEach { attribute ->
+            anchor.attr(attribute).takeIf { it.isNotBlank() }?.let(candidates::add)
         }
-        container.selectFirst("img")?.attr("alt")?.takeIf { it.isNotBlank() }?.let { candidates.add(it) }
-        anchor.text().takeIf { it.isNotBlank() }?.let { candidates.add(it) }
+        listOf("data-title", "data-name", "aria-label").forEach { attribute ->
+            container.attr(attribute).takeIf { it.isNotBlank() }?.let(candidates::add)
+        }
+        for (selector in config.titleSelectors) {
+            val element = container.selectFirst(selector) ?: continue
+            listOf("content", "data-title", "title", "aria-label").forEach { attribute ->
+                element.attr(attribute).takeIf { it.isNotBlank() }?.let(candidates::add)
+            }
+            element.text().takeIf { it.isNotBlank() }?.let(candidates::add)
+        }
+        container.select("img").forEach { image ->
+            image.attr("alt").takeIf { it.isNotBlank() }?.let(candidates::add)
+            image.attr("title").takeIf { it.isNotBlank() }?.let(candidates::add)
+        }
+        anchor.text().takeIf { it.isNotBlank() }?.let(candidates::add)
 
-        for (candidate in candidates) {
+        for (candidate in candidates.distinct()) {
             val cleaned = cleanTitle(candidate) ?: continue
             if (cleaned.length >= 3) return cleaned
         }
@@ -288,11 +307,20 @@ object ExtractorSupport {
         if (container == null) return null
         for (selector in config.durationSelectors) {
             val element = container.selectFirst(selector) ?: continue
-            val text = element.text().trim()
-            if (DurationParser.toSeconds(text) != null) return text
+            val candidates = listOf(
+                element.text(), element.attr("content"), element.attr("datetime"),
+                element.attr("data-duration"), element.attr("data-length"), element.attr("aria-label")
+            )
+            for (candidate in candidates) {
+                val value = candidate.trim()
+                if (DurationParser.toSeconds(value) != null) return value
+            }
         }
-        val text = container.text().take(300)
-        val match = durationInText.find(text) ?: return null
+        for (attribute in listOf("data-duration", "data-length", "aria-label", "content")) {
+            val value = container.attr(attribute).trim()
+            if (DurationParser.toSeconds(value) != null) return value
+        }
+        val match = durationInText.find(container.text().take(500)) ?: return null
         return match.groupValues.getOrNull(1)
     }
 
