@@ -23,6 +23,7 @@ class MetadataCache(
 
     private data class Entry(val metadata: VideoMetadata, val storedAt: Long)
 
+    private val capacity = maxEntries.coerceAtLeast(1)
     private val map = ConcurrentHashMap<String, Entry>()
 
     /** Returnerar cachad metadata om den fortfarande är färsk, annars null. */
@@ -36,14 +37,20 @@ class MetadataCache(
     }
 
     /** Lägger in (eller ersätter) metadata för en detaljsida. */
+    @Synchronized
     fun put(detailUrl: String, metadata: VideoMetadata) {
-        if (map.size >= maxEntries) {
-            // Rensa den äldsta fjärdedelen i stället för en enda post, så att taket
-            // inte nås igen direkt efter varje ny insättning.
-            map.entries
-                .sortedBy { it.value.storedAt }
-                .take(maxEntries / 4)
-                .forEach { map.remove(it.key) }
+        // Replacing a key does not increase the size, so do not evict unrelated entries.
+        if (detailUrl !in map) {
+            while (map.size >= capacity) {
+                // Evict at least one item even for tiny capacities (1–3).
+                val removeCount = maxOf(1, capacity / 4)
+                val oldest = map.entries
+                    .sortedBy { it.value.storedAt }
+                    .take(removeCount)
+                    .map { it.key }
+                if (oldest.isEmpty()) break
+                oldest.forEach { map.remove(it) }
+            }
         }
         map[detailUrl] = Entry(metadata, clock())
     }
