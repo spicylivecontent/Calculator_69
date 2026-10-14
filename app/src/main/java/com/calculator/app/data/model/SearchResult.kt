@@ -73,10 +73,10 @@ data class SearchResult(
 
     /** Hur stor del av söktermerna som finns i den skrapade informationen (0f–1f). */
     fun coverageOf(terms: List<String>): Float {
-        val wanted = terms.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct()
+        val wanted = terms.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         if (wanted.isEmpty()) return 0f
-        val haystack = searchableText.lowercase()
-        return wanted.count { haystack.contains(it) }.toFloat() / wanted.size.toFloat()
+        return wanted.count { SearchTextMatcher.containsTerm(searchableText, it) }
+            .toFloat() / wanted.size.toFloat()
     }
 
     fun tagsPreview(limit: Int = 4): List<String> = tags.take(limit)
