@@ -79,7 +79,7 @@ object Fetch {
             if (!shouldRetry(last, index, total)) break
             delay(RETRY_DELAY_MS * (index + 1))
         }
-        return null
+        null
     }
 
     /** [client] är samma delade klient som standard; parametern finns för tester. */

@@ -29,9 +29,9 @@ class HostRateLimiter(
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
 
-    private class HostState {
+    private class HostState(maxInFlight: Int) {
         /** Slussar hur många anrop som får vara igång mot värdet samtidigt. */
-        val gate = Semaphore(maxInFlightPerHost)
+        val gate = Semaphore(maxInFlight.coerceAtLeast(1))
         /** Seriell åtkomst till startiden så att mellanrummet alltid räknas rätt. */
         val startMutex = Mutex()
         var lastStartMs: Long = 0L
