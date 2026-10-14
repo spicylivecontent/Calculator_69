@@ -1,5 +1,9 @@
 # Underhållsgranskning – 2026-10-14
 
+> **Status: AVSLUTAD 2026-10-14.** PR #17 (verktygskedja + innehållsport +
+> testfixar) är mergad till `main` med grönt CI; Dependabot-PR #9/#10/#15/#16 är
+> stängda som ersatta och #11 som uppskjuten. Alla objekt nedan är avhandlade.
+
 ## Omfattning
 
 Granskningen avser generella bygg-, säkerhets- och beroendeändringar. Ingen ny
@@ -47,7 +51,7 @@ Dependabot grupperar hädanefter Kotlin-pluginerna och KSP för att minska riske
 för fristående, inkompatibla compiler-uppdateringar. Gruppering är inte en garanti
 för kompatibilitet, och befintliga PR:er kan behöva ersättas efter nästa körning.
 
-### Samordnad ersättare (arbetsgren `arena/b2cc8fdd-calculator-69`)
+### Samordnad ersättare (landad: PR #17, merge `963674e`)
 
 Fem enskilda uppdateringar kan inte bli gröna var för sig; de låser varandras
 krav. En gemensam gren uppgraderar hela kedjan samtidigt:
@@ -92,9 +96,15 @@ redan av PR #14 (smalare Proguard-regler, aktiv autolåstimer, biometri-hjälpar
 1. ~~Välj och dokumentera en kompatibel uppsättning AGP/Gradle/Kotlin/KSP/Room.~~ (tabellen ovan)
 2. ~~Uppdatera kompilator och compiler plugins tillsammans på arbetsgrenen.~~ (gjort på arbetsgrenen)
 3. ~~Läs de nya AAR-kraven för Compose och nätverkskedjan ur fullständiga byggloggar.~~ (Compose 1.12: compileSdk 37 + AGP 9.1.1; okhttp-android 5.5.0: minCompileSdk 37)
-4. Kör JVM-tester, lint, debug/release-byggen och instrumenterade tester. *(pågår i GitHub Actions på arbetsgrenen)*
-5. Mergea först när alla relevanta kontroller är gröna. Stäng inte de gamla PR:erna
-   som lösta förrän deras ändringar verkligen ingår i en verifierad ersättare.
+4. ~~Kör JVM-tester, lint, debug/release-byggen och instrumenterade tester.~~ (grönt på arbetsgrenen och på `main` efter merge)
+5. ~~Mergea först när alla relevanta kontroller är gröna. Stäng inte de gamla PR:erna
+   som lösta förrän deras ändringar verkligen ingår i en verifierad ersättare.~~
+   (PR #17 mergad till `main` 2026-10-14, `963674e`; #9/#10/#15/#16 stängda som ersatta,
+   #11 som uppskjuten; `main` grönt i både Build APK och UI-tester)
+
+Utöver beroendena landade även de fem enhetstestfel som PR #18 lämnade efter sig på
+`main` (rare-term-synonymer i `ResultRanker`, tre nya konceptkluster i
+`OnnxEmbeddingEngine`, citatfrasordning i `SearchPlanner`) – se PR #17:s beskrivning.
 
 ## Testmiljö
 

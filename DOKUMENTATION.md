@@ -61,7 +61,7 @@ stället – för situationer där någon annan tittar.
 |---|---|
 | Paketnamn | `com.calculator.app` |
 | Språk | 100 % Kotlin (Compose-UI), svenska texter hårdkodade i koden |
-| Kotlin-kod | 12 804 rader i 87 filer (`app/src/main`) + 2 447 rader JVM-tester i 21 filer + 502 rader instrumenterade tester i 5 filer |
+| Kotlin-kod | 13 567 rader i 94 filer (`app/src/main`) + 2 826 rader JVM-tester i 26 filer + 502 rader instrumenterade tester i 6 filer |
 | minSdk / targetSdk / compileSdk | 26 / 35 / 37 |
 | versionCode / versionName | 1 / 1.0 |
 | Byggsystem | Gradle 9.8.1 (wrapper) + AGP 9.4.1 med inbyggt Kotlin-stöd + Kotlin 2.4.21 + KSP 2.3.12 |
@@ -71,8 +71,8 @@ stället – för situationer där någon annan tittar.
 | Nätverk | OkHttp 4.12.0 + Jsoup 1.18.1 |
 | Bilder | Coil 2.7.0 (crossfade) |
 | Övrigt | exp4j 0.4.8 (matte), androidx.biometric 1.1.0, coroutines 1.11.0 |
-| JVM-enhetstester | **170 testfall i 21 filer** (körs utan Android-enhet) |
-| Instrumenterade tester | **17 testfall i 5 filer** (emulator eller Android-enhet krävs) |
+| JVM-enhetstester | **190 testfall i 26 filer** (körs utan Android-enhet) |
+| Instrumenterade tester | **17 testfall i 6 filer** (emulator eller Android-enhet krävs) |
 | CI | GitHub Actions: enhetstester, lint, APK och androidTest-kompilering vid push; emulatorregressioner på appkod |
 | APK (debug) | artifact **Calculator-debug-apk**; CI har ett tak på 40 MB |
 | Sajter | 10 stycken (se avsnitt 7) |
@@ -1048,13 +1048,23 @@ körnings-ID:n har inte återställts. Tabellen är ett urval av viktiga milstol
 | `6de9a7a`, `b89b0e2`, `d36964d`, `6e89b77` | Lintfixar, WebView-navigeringsregressioner, spelargester/sökning/ljusstyrka och Media3 opt-in |
 | `650fc10` | Merge av PR #4 till `main` |
 | `fb47444`, `5a8c27b` | PR #5: källsajtbegränsade sökomdirigeringar, detaljlänkar, HTML5-helscreen-host, bounded resume-data och regressionsfixar |
-| arbetsgren | **Samordnad verktygskedja**: Gradle 9.8.1, AGP 9.4.1 med inbyggt Kotlin-stöd (kotlin-android tillämpas inte längre), Kotlin 2.4.21, KSP 2.3.12, Compose BOM 2026.09.00, Room 2.8.5, Media3 1.11.1, coroutines 1.11.0; compileSdk 37 (krav från Compose 1.12), material-ikoner frysta på 1.7.8, CI installerar SDK 37; ersätter Dependabot-PR #9, #10, #15 och #16 – okhttp (#11) ligger kvar på 4.12.0 och är uppskjuten |
+| `963674e` (PR #17, merge) | **Samordnad verktygskedja**: Gradle 9.8.1, AGP 9.4.1 med inbyggt Kotlin-stöd (kotlin-android tillämpas inte längre), Kotlin 2.4.21, KSP 2.3.12, Compose BOM 2026.09.00, Room 2.8.5, Media3 1.11.1, coroutines 1.11.0; compileSdk 37 (krav från Compose 1.12), material-ikoner frysta på 1.7.8, CI installerar SDK 37; ersätter Dependabot-PR #9, #10, #15 och #16 – okhttp (#11) ligger kvar på 4.12.0 och är uppskjuten |
 
 Efter merge av PR #5 verifierades `main` @ `9fb6ba2` grönt av snabbworkflow
 **38465146508** (JVM-tester, lint, APK och kompilering av instrumenterade tester) och
 emulatorworkflow **38465146506** (17 instrumenterade regressioner). På PR #5-grenen
 fångade den första appkodskörningen (`38462442461`) ett Kotlin-kompileringsfel i testets
 OkHttp DNS-resolver; det rättades i `5a8c27b`.
+
+Efter merge av PR #17 verifierades `main` @ `963674e` grönt av både snabbworkflow
+**38504473822** (190 JVM-testfall, lint, debug/release-APK) och emulatorworkflow
+**38504473848** (17 instrumenterade regressioner). PR #17 slog också ihop de fem
+enhetstestfel som PR #18 lämnade efter sig på `main`: rare-term-synonymer i
+`ResultRanker`, tre nya konceptkluster i `OnnxEmbeddingEngine`, citatfrasordning i
+`SearchPlanner` samt `WebAdBlockTest` tillbaka på okhttp 4.12:s klassvägsbaserade
+public suffix-lista (testberoendena justerades tillbaka till 4.12.0). Dependabot-PR
+#9/#10/#15/#16 stängdes som ersatta och #11 (okhttp 5.5.0) som uppskjuten –
+nätverkskedjan ligger samlad på 4.12.0 i väntan på en egen samordnad migrering.
 
 ---
 
