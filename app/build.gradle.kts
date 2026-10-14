@@ -56,6 +56,26 @@ kotlin {
     }
 }
 
+// OkHttp 5 är en Kotlin-multiplatform-modul: Android-bygget använder okhttp-android,
+// som läser PublicSuffixDatabase.list från appens assets via applicationContext.
+// I JVM-enhetstester finns ingen Android-kontext, och listan krävs av
+// HttpUrl.topPrivateDomain() som WebAdBlock.sameSite förlitar sig på. Be därför
+// Gradle föredra JVM-varianten (okhttp-jvm) på testklassvägarna – den läser samma
+// lista från klassvägsresurser i stället. APK-bygget och instrumenterade tester
+// (som kör på riktiga Android) påverkas inte och fortsätter använda okhttp-android.
+afterEvaluate {
+    configurations
+        .matching { it.name.startsWith("test") }
+        .configureEach {
+            attributes {
+                attribute(
+                    TargetJvmEnvironment.TARGET_JVM_ENVIRONMENT_ATTRIBUTE,
+                    objects.named(TargetJvmEnvironment::class.java, TargetJvmEnvironment.STANDARD_JVM),
+                )
+            }
+        }
+}
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
