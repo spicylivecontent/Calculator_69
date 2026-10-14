@@ -733,7 +733,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun applyEnriched(updated: SearchResult) {
         verificationDone++
-        if (isFilteredOut(updated)) candidates.remove(updated.id)
+        if (isFilteredOut(updated) || !matchesRequiredTerms(updated)) candidates.remove(updated.id)
         else candidates[updated.id] = updated
         publishResults()
     }
@@ -777,6 +777,48 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val text = result.searchableText.lowercase(Locale.ROOT)
         val filters = if (includeQueryNegatives) blockedWords else dislikedWords
         return AgeSafety.containsBlockedTerm(text) || filters.any { text.contains(it) }
+    }
+
+    /**
+     * Search variants are OR-ed at the source sites to improve recall, but after enrichment
+     * the user's actual positive terms must all be represented in the title/tags/description/
+     * comments. For "solo latina atm", this prevents an "atm" hit or a "solo latina" hit
+     * from being accepted without the remaining concepts.
+     */
+    private fun matchesRequiredTerms(result: SearchResult): Boolean {
+        val required = activePlan?.requiredTerms.orEmpty()
+        if (required.isEmpty()) return true
+
+        val text = result.searchableText.lowercase(Locale.ROOT)
+        val soloMode = required.any { it.equals("solo", ignoreCase = true) }
+        val identityText = (listOf(result.title) + result.tags + result.categories)
+            .joinToString(" ").lowercase(Locale.ROOT)
+
+        if (soloMode) {
+            val coupleSignals = listOf(
+                "couple", "duo", "threesome", "group sex", "two girls", "two women",
+                "two men", "boyfriend", "girlfriend", "mf couple", "ff couple"
+            )
+            if (coupleSignals.any { containsWholeTerm(identityText, it) }) return false
+        }
+
+        return required.all { term ->
+            val alternatives = when (term.lowercase(Locale.ROOT)) {
+                "atm", "a2m", "ass to mouth" -> listOf("atm", "a2m", "ass to mouth")
+                "latina", "latin" -> listOf("latina", "latin", "hispanic")
+                "redhead" -> listOf("redhead", "red hair")
+                else -> listOf(term)
+            }
+            alternatives.any { containsWholeTerm(text, it) }
+        }
+    }
+
+    private fun containsWholeTerm(text: String, term: String): Boolean {
+        val normalized = term.lowercase(Locale.ROOT).trim()
+        if (normalized.isBlank()) return false
+        if (normalized.contains(' ')) return text.contains(normalized)
+        return Regex("(?<![\\\\p{L}\\\\p{N}])" + Regex.escape(normalized) + "(?![\\\\p{L}\\\\p{N}])")
+            .containsMatchIn(text)
     }
 
     private fun publishResults() {
