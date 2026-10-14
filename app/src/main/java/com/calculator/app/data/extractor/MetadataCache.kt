@@ -46,7 +46,7 @@ class MetadataCache(
     @Synchronized
     fun put(detailUrl: String, metadata: VideoMetadata) {
         // Replacing a key does not increase the size, so do not evict unrelated entries.
-        if (detailUrl !in map) {
+        if (!map.containsKey(detailUrl)) {
             while (map.size >= capacity) {
                 // Evict at least one item even for tiny capacities (1–3).
                 val removeCount = maxOf(1, capacity / 4)
