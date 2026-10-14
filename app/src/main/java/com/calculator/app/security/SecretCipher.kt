@@ -50,16 +50,24 @@ object SecretCipher {
     fun decryptBytes(encoded: String?): ByteArray? {
         val (iv, data) = CipherPayload.decode(encoded) ?: return null
         return runCatching {
+            // Decryption must never create a replacement key: doing so hides a missing
+            // Keystore key and leaves existing ciphertext permanently unreadable.
+            val key = getExistingKey() ?: return@runCatching null
             val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv))
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv))
             cipher.doFinal(data)
         }.getOrNull()
     }
 
     @Synchronized
-    private fun getOrCreateKey(): SecretKey {
+    private fun getExistingKey(): SecretKey? {
         val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
-        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
+        return keyStore.getKey(KEY_ALIAS, null) as? SecretKey
+    }
+
+    @Synchronized
+    private fun getOrCreateKey(): SecretKey {
+        getExistingKey()?.let { return it }
 
         val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEY_STORE)
         keyGenerator.init(
