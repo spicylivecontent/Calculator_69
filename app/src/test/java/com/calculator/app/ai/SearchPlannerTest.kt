@@ -114,6 +114,7 @@ class SearchPlannerTest {
 
         assertEquals("solo latina atm", plan.queries.first().text)
         assertTrue(plan.queries.first().isPrimary)
+        assertTrue(plan.requiredTerms.containsAll(listOf("solo", "latina", "atm")))
     }
 
     @Test
