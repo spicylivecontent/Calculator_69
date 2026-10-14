@@ -677,8 +677,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         var added = 0
         for (item in batch) {
             if (AgeSafety.containsBlockedTerm(item.title)) continue
-            val title = item.title.lowercase(Locale.ROOT)
-            if (blockedWords.any { title.contains(it) }) continue
+            // Apply the same whole-term boundaries before enrichment as after it;
+            // otherwise "ass" can still remove a title such as "classic" too early.
+            if (blockedWords.any { SearchTextMatcher.containsTerm(item.title, it) }) continue
 
             val existing = candidates[item.id]
             if (existing == null) {
