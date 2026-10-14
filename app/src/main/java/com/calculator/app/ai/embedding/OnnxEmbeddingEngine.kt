@@ -145,6 +145,9 @@ class OnnxEmbeddingEngine(
             ConceptCluster("creampie", 1.2f, listOf("creampie", "cum inside", "breeding")),
             ConceptCluster("feet_fetish", 1.2f, listOf("feet", "foot", "footjob", "fotfetisch")),
             ConceptCluster("rough_bdsm", 1.2f, listOf("rough", "bdsm", "bondage", "dominant", "submissive"))
+            ConceptCluster("outdoor_public", 1.1f, listOf("outdoor", "outdoors", "public", "utomhus", "skog", "skogen", "forest", "park", "nature", "naturskog")),
+            ConceptCluster("redhead", 1.2f, listOf("redhead", "red hair", "rodharig", "rod har", "ginger", "rodfargad")),
+            ConceptCluster("shower_bath", 1.1f, listOf("shower", "dusch", "bathroom", "badrum", "bathtub", "badkar")),
         )
     }
 }

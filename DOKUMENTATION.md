@@ -68,7 +68,7 @@ stället – för situationer där någon annan tittar.
 | UI | Jetpack Compose (BOM 2026.09.00), Material 3, material-icons-extended 1.7.8 (fryst) |
 | Media | Media3/ExoPlayer 1.11.1 (`exoplayer`, `exoplayer-hls`, `ui`, `common`) |
 | Databas | Room 2.8.5 + SQLCipher 4.19.1 (`calculator_vault_enc.db`, version 1, 6 tabeller) |
-| Nätverk | OkHttp 5.5.0 + Jsoup 1.18.1 |
+| Nätverk | OkHttp 4.12.0 + Jsoup 1.18.1 |
 | Bilder | Coil 2.7.0 (crossfade) |
 | Övrigt | exp4j 0.4.8 (matte), androidx.biometric 1.1.0, coroutines 1.11.0 |
 | JVM-enhetstester | **170 testfall i 21 filer** (körs utan Android-enhet) |
@@ -1048,7 +1048,7 @@ körnings-ID:n har inte återställts. Tabellen är ett urval av viktiga milstol
 | `6de9a7a`, `b89b0e2`, `d36964d`, `6e89b77` | Lintfixar, WebView-navigeringsregressioner, spelargester/sökning/ljusstyrka och Media3 opt-in |
 | `650fc10` | Merge av PR #4 till `main` |
 | `fb47444`, `5a8c27b` | PR #5: källsajtbegränsade sökomdirigeringar, detaljlänkar, HTML5-helscreen-host, bounded resume-data och regressionsfixar |
-| arbetsgren | **Samordnad verktygskedja**: Gradle 9.8.1, AGP 9.4.1 med inbyggt Kotlin-stöd (kotlin-android tillämpas inte längre), Kotlin 2.4.21, KSP 2.3.12, Compose BOM 2026.09.00, Room 2.8.5, Media3 1.11.1, OkHttp 5.5.0, coroutines 1.11.0; compileSdk 37 (krav från Compose 1.12 och okhttp-android 5.5.0), material-ikoner frysta på 1.7.8, CI installerar SDK 37; ersätter Dependabot-PR #9, #10, #11, #15 och #16 |
+| arbetsgren | **Samordnad verktygskedja**: Gradle 9.8.1, AGP 9.4.1 med inbyggt Kotlin-stöd (kotlin-android tillämpas inte längre), Kotlin 2.4.21, KSP 2.3.12, Compose BOM 2026.09.00, Room 2.8.5, Media3 1.11.1, coroutines 1.11.0; compileSdk 37 (krav från Compose 1.12), material-ikoner frysta på 1.7.8, CI installerar SDK 37; ersätter Dependabot-PR #9, #10, #15 och #16 – okhttp (#11) ligger kvar på 4.12.0 och är uppskjuten |
 
 Efter merge av PR #5 verifierades `main` @ `9fb6ba2` grönt av snabbworkflow
 **38465146508** (JVM-tester, lint, APK och kompilering av instrumenterade tester) och

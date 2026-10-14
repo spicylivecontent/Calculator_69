@@ -10,7 +10,7 @@ plugins {
 
 android {
     namespace = "com.calculator.app"
-    // Compose 1.12 (BOM 2026.09.00) och okhttp-android 5.5.0 kräver compileSdk 37.
+    // Compose 1.12 (BOM 2026.09.00) kräver compileSdk 37.
     compileSdk = 37
 
     defaultConfig {
@@ -48,28 +48,8 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
-    testOptions {
-        unitTests {
-            // Robolectric behöver appens sammanslagna resurser och assets – dit hör
-            // PublicSuffixDatabase.list som okhttp-android 5 levererar som AAR-asset
-            // och som WebAdBlockTest läser via HttpUrl.topPrivateDomain().
-            isIncludeAndroidResources = true
-        }
-    }
 }
 
-// Robolectric 4.17 reflekterar i JDK-interna som JDK 17+ låser som standard
-// (https://robolectric.org/getting-started/).
-tasks.withType<Test>().configureEach {
-    jvmArgs(
-        "--add-opens=java.base/java.lang=ALL-UNNAMED",
-        "--add-opens=java.base/java.util=ALL-UNNAMED",
-        "--add-opens=java.base/java.io=ALL-UNNAMED",
-        "--add-opens=java.base/java.net=ALL-UNNAMED",
-        "--add-opens=java.base/java.security=ALL-UNNAMED",
-        "--add-opens=java.base/java.text=ALL-UNNAMED",
-    )
-}
 
 kotlin {
     compilerOptions {
@@ -133,11 +113,8 @@ dependencies {
     testImplementation(libs.junit)
 
     // Enhetstester som kör mot en lokal HTTPS-server (MockWebServer)
-    testImplementation("com.squareup.okhttp3:mockwebserver:5.5.0")
-    testImplementation("com.squareup.okhttp3:okhttp-tls:5.5.0")
-    // Robolectric ger JVM-testerna en Android-kontext (krävs av okhttp 5:s
-    // public suffix-databas som läses från appens assets).
-    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

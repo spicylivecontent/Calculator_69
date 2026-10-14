@@ -1,30 +1,11 @@
 package com.calculator.app.ui.web
 
-import okhttp3.OkHttp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.annotation.Config
 
-/**
- * Körs under Robolectric: OkHttp 5 läser PublicSuffixDatabase.list från appens
- * assets via applicationContext, och samma-site-logiken (topPrivateDomain) kräver
- * den listan. Robolectric tillhandahåller kontexten och okhttp-android:ens assets;
- * utan initieringen kastar okhttp "Unable to load PublicSuffixDatabase.list".
- */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
 class WebAdBlockTest {
-
-    @Before
-    fun initieraOkHttp() {
-        OkHttp.initialize(RuntimeEnvironment.getApplication())
-    }
 
     private val site = "https://www.mytube.example/video/abc123"
 

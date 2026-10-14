@@ -41,7 +41,7 @@ De mergas därför inte automatiskt och lämnas öppna för samordnad uppgraderi
 | #16 | Room 2.6.1 → 2.8.5 | Körs i kombination med KSP 2.3.12; kräver verifiering av schemaexport och SQLCipher-samarbete. |
 | #9 | Compose BOM 2024.10.01 → 2026.09.00 | `checkDebugAarMetadata` misslyckades. Compose 1.12 kräver compileSdk 37 och minst AGP 9.1.1. |
 | #10 | Media3 1.5.0 → 1.11.1 | Transitiv stdlib har Kotlin-metadata 2.2.0 mot kompilatorns 2.0.0. Kräver samordnad uppgradering. |
-| #11 | OkHttp 4.12.0 → 5.5.0 | `checkDebugAarMetadata` misslyckades. `okhttp-android` 5.5.0 deklarerar minCompileSdk=37; MockWebServer-API:t (`okhttp3.mockwebserver.*`, `SocketPolicy`, `okhttp-tls`) är bibehållet i 5.5.0 och verifieras i CI. |
+| #11 | OkHttp 4.12.0 → 5.5.0 | Uppskjuten. okhttp 5 läser public suffix-listan från appens assets på Android, vilket kräver Android-kontext även i JVM-tester; dessutom drar MockWebServer 5.5.0 in okhttp 5 på testklassvägen medan appen ligger kvar på 4.12.0. PR #17 håller hela nätverkskedjan samlad på 4.12.0 i stället. |
 
 Dependabot grupperar hädanefter Kotlin-pluginerna och KSP för att minska risken
 för fristående, inkompatibla compiler-uppdateringar. Gruppering är inte en garanti
@@ -62,9 +62,9 @@ krav. En gemensam gren uppgraderar hela kedjan samtidigt:
 | material-icons-extended | via BOM | 1.7.8 (fryst) | Ingår inte i BOM:ens 2026-rad. |
 | Room | 2.6.1 | 2.8.5 | Målet för PR #16. |
 | Media3 | 1.5.0 | 1.11.1 | Målet för PR #10. |
-| OkHttp (+ mockwebserver, okhttp-tls) | 4.12.0 | 5.5.0 | Målet för PR #11; kräver compileSdk 37. |
+| OkHttp (+ mockwebserver, okhttp-tls) | 4.12.0 | 4.12.0 (oförändrad) | PR #11 uppskjuten (se Dependabot-tabellen); testberoendena hålls på samma version som appen för en konsekvent klassväg. |
 | coroutines | 1.9.0 | 1.11.0 | Målet i PR #15. |
-| compileSdk | 36 | 37 | Krav från Compose 1.12 och `okhttp-android` 5.5.0. targetSdk (35) och minSdk (26) ändras inte. |
+| compileSdk | 36 | 37 | Krav från Compose 1.12. targetSdk (35) och minSdk (26) ändras inte. |
 
 JVM-målet för Java och Kotlin förblir 11. Databasversionen är fortfarande 1 och
 SQLCipher-konfigurationen är oförändrad; Room 2.8.5 exporterar samma schema.
@@ -81,11 +81,11 @@ innehöll redan ersatt säkerhets-/bygglogik):
 - **HostRateLimiter**: per-värd-begränsning (280 ms mellan startider, högst två
   samtidiga) kring `Fetch.page`, med tester för mellanrum, tak och släpp vid fel.
 
-OkHttp 5.5.0 läser public suffix-listan från appens assets via applicationContext;
-`WebAdBlockTest` (som testar samma-site-logiken) körs därför under Robolectric med
-`OkHttp.initialize`, enligt okhtips eget testmönster. Säkerhets- och byggdelarna på
-`fix/priority-improvements` ingår inte: de ersattes redan av PR #14 (smalare
-Proguard-regler, aktiv autolåstimer, biometri-hjälpare).
+OkHttp får ligga kvar på 4.12.0 i denna gren: 5.x läser public suffix-listan från
+appens assets på Android och kräver därmed Android-kontext i JVM-testerna, vilket
+inte motiverar migreringsarbetet här (Dependabot #11 stängs som uppskjuten).
+Säkerhets- och byggdelarna på `fix/priority-improvements` ingår inte: de ersattes
+redan av PR #14 (smalare Proguard-regler, aktiv autolåstimer, biometri-hjälpare).
 
 ### Nästa steg för beroendena
 
