@@ -19,9 +19,9 @@ object SearchTextMatcher {
 
         val tokens = normalizedTerm.split(' ').filter { it.isNotBlank() }
         if (tokens.isEmpty()) return false
-        val expression = tokens.joinToString("\\\\s+") { Regex.escape(it) }
+        val expression = tokens.joinToString("\\s+") { Regex.escape(it) }
         return Regex(
-            "(?<![\\\\p{L}\\\\p{N}])$expression(?![\\\\p{L}\\\\p{N}])"
+            "(?<![\\p{L}\\p{N}])$expression(?![\\p{L}\\p{N}])"
         ).containsMatchIn(normalizedText)
     }
 
