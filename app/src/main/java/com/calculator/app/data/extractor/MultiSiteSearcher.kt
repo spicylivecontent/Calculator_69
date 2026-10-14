@@ -235,7 +235,8 @@ class MultiSiteSearcher(
             PornhubExtractor(),
             BeegExtractor(),
             YouPornExtractor(),
-            PornTrexExtractor()
+            PornTrexExtractor(),
+            LuxureTvExtractor()
         )
     }
 }

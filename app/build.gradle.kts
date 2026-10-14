@@ -48,32 +48,33 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    testOptions {
+        unitTests {
+            // Robolectric behöver appens sammanslagna resurser och assets – dit hör
+            // PublicSuffixDatabase.list som okhttp-android 5 levererar som AAR-asset
+            // och som WebAdBlockTest läser via HttpUrl.topPrivateDomain().
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+// Robolectric 4.17 reflekterar i JDK-interna som JDK 17+ låser som standard
+// (https://robolectric.org/getting-started/).
+tasks.withType<Test>().configureEach {
+    jvmArgs(
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        "--add-opens=java.base/java.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.io=ALL-UNNAMED",
+        "--add-opens=java.base/java.net=ALL-UNNAMED",
+        "--add-opens=java.base/java.security=ALL-UNNAMED",
+        "--add-opens=java.base/java.text=ALL-UNNAMED",
+    )
 }
 
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_11)
     }
-}
-
-// OkHttp 5 är en Kotlin-multiplatform-modul: Android-bygget använder okhttp-android,
-// som läser PublicSuffixDatabase.list från appens assets via applicationContext.
-// I JVM-enhetstester finns ingen Android-kontext, och listan krävs av
-// HttpUrl.topPrivateDomain() som WebAdBlock.sameSite förlitar sig på. Be därför
-// Gradle föredra JVM-varianten (okhttp-jvm) på testklassvägarna – den läser samma
-// lista från klassvägsresurser i stället. APK-bygget och instrumenterade tester
-// (som kör på riktiga Android) påverkas inte och fortsätter använda okhttp-android.
-afterEvaluate {
-    configurations
-        .matching { it.name.startsWith("test") }
-        .configureEach {
-            attributes {
-                attribute(
-                    TargetJvmEnvironment.TARGET_JVM_ENVIRONMENT_ATTRIBUTE,
-                    objects.named(TargetJvmEnvironment::class.java, TargetJvmEnvironment.STANDARD_JVM),
-                )
-            }
-        }
 }
 
 ksp {

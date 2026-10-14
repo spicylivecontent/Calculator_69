@@ -419,6 +419,7 @@ avse minderåriga.
 | Beeg | `https://beeg.com/search?q={q}` | nej |
 | YouPorn | `https://www.youporn.com/search/?query={q}&page={page}` | ja |
 | PornTrex | `https://www.porntrex.com/search/{q}/{page}/` | ja |
+| LuxureTV | `https://en.luxuretv.com/search/{q}/{page}/` | ja |
 
 Sökningen sker parallellt på alla valda sajter (alla om inget valts), och varje sajt
 rapporterar antal träffar (`SiteSearchReport`) – inklusive vilka sajter som felade, med
@@ -843,8 +844,11 @@ biblioteket laddas med `System.loadLibrary("sqlcipher")` innan filen öppnas.
 | `ai/SearchPlannerTest.kt` | Huvudsökning, varianter, negativa filter, svenska → engelska, citat, kategorier, frågetak (även noll), förklaringstext |
 | `data/taxonomy/SearchTaxonomyTest.kt` | Unika id:n, etiketter, gemena engelska termer, uppslag, inga blockerade ålderstermer |
 | `data/extractor/ExtractorSupportTest.kt` | Listningsparsning, titelstädning, slug-fallback, kvalitet, HTTPS- och källsajtkrav för detaljlänkar |
+| `data/extractor/MetadataCacheTest.kt` | TTL-gräns, ersättning av samma URL, rensning av äldsta fjärdedelen vid full cache |
+| `data/extractor/LuxureTvExtractorTest.kt` | Sök-URL:ens format och listningsparsning för LuxureTV |
+| `network/HostRateLimiterTest.kt` | Mellanrum mellan startider per värd, tak på samtidiga anrop, isolering mellan värdar, släpp av tillstånd vid fel |
 | `data/extractor/GenericListingTest.kt` | Reservparsning: videolänkar utan klassnamn, filtrering av tagg-/kategorilänkar, dedup, HTTPS |
-| `data/extractor/SiteConfigTest.kt` | Alla tio sajter: unika id:n, HTTPS-sök-URL med orden kvar, att mönstret matchar sajtens egna länkar, konsekvent konfiguration |
+| `data/extractor/SiteConfigTest.kt` | Alla elva sajter: unika id:n, HTTPS-sök-URL med orden kvar, att mönstret matchar sajtens egna länkar, konsekvent konfiguration |
 | `data/extractor/SiteUrlPolicyTest.kt` | Källsajtens HTTPS-hostkontroll, subdomäner, lookalike-värdar, portar och inloggningsuppgifter |
 | `data/extractor/ScrapeRuleTest.kt` | Fjärrregler: tolkning, HTTPS- och källvärdskrav, `{query}`, trasig regex, versionskrav, tak för selektorer/limit, nya sajter, namnvalidering |
 | `data/extractor/FetchRetryTest.kt` | Omförsökspolicyn: nätverksfel och 5xx/429 görs om, 404/403 och klartext aldrig, antalet försök respekteras |

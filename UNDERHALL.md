@@ -69,6 +69,24 @@ krav. En gemensam gren uppgraderar hela kedjan samtidigt:
 JVM-målet för Java och Kotlin förblir 11. Databasversionen är fortfarande 1 och
 SQLCipher-konfigurationen är oförändrad; Room 2.8.5 exporterar samma schema.
 
+Grenen tar dessutom med de innehållsspecifika delar av `fix/priority-improvements`
+som granskningen medvetet skjutit upp, nu omskrivna mot aktuell main i stället för
+att merga grenens äldre utkast (som saknade dokumentationskommentarer och
+innehöll redan ersatt säkerhets-/bygglogik):
+
+- **LuxureTV** (en.luxuretv.com) som elfte sajt, med exemplelänk i `SiteConfigTest`
+  och ett eget listningstest.
+- **MetadataCache**: kort TTL-minnecache (20 min, max 256 poster) kopplad till
+  `MetadataExtractor.fetch`, deterministiskt testad med injicerad klocka.
+- **HostRateLimiter**: per-värd-begränsning (280 ms mellan startider, högst två
+  samtidiga) kring `Fetch.page`, med tester för mellanrum, tak och släpp vid fel.
+
+OkHttp 5.5.0 läser public suffix-listan från appens assets via applicationContext;
+`WebAdBlockTest` (som testar samma-site-logiken) körs därför under Robolectric med
+`OkHttp.initialize`, enligt okhtips eget testmönster. Säkerhets- och byggdelarna på
+`fix/priority-improvements` ingår inte: de ersattes redan av PR #14 (smalare
+Proguard-regler, aktiv autolåstimer, biometri-hjälpare).
+
 ### Nästa steg för beroendena
 
 1. ~~Välj och dokumentera en kompatibel uppsättning AGP/Gradle/Kotlin/KSP/Room.~~ (tabellen ovan)

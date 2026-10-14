@@ -1,5 +1,6 @@
 package com.calculator.app.data.extractor
 
+import com.calculator.app.network.HostRateLimiter
 import com.calculator.app.network.NetworkClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -16,6 +17,10 @@ import kotlin.coroutines.resume
 
 /**
  * Gemensam hämtning av HTML från sajterna med rimliga timeouts och maxstorlek.
+ *
+ * Alla sidhämtningar går genom [HostRateLimiter]: per värd hålls minst 280 ms
+ * mellan startider och högst två samtidiga anrop, vilket minskar risken att
+ * sajterna blockerar appen när sökvarianter och detaljsider hämtas parallellt.
  *
  * En tillfällig svacka (timeout, nätverksfel eller 5xx/429) försöker vi en gång till efter
  * en kort paus – men bara när det faktiskt kan hjälpa: en sida som svarat 404 eller som
@@ -65,12 +70,12 @@ object Fetch {
         timeoutMs: Long = PAGE_TIMEOUT_MS,
         client: OkHttpClient = NetworkClient.client,
         attempts: Int = MAX_ATTEMPTS
-    ): String? {
+    ): String? = HostRateLimiter.Default.withPermit(url) {
         val total = attempts.coerceAtLeast(1)
         var last: Attempt = Attempt.Rejected
         for (index in 0 until total) {
             last = attempt(url, referer, timeoutMs, client)
-            if (last is Attempt.Body) return last.text
+            if (last is Attempt.Body) return@withPermit last.text
             if (!shouldRetry(last, index, total)) break
             delay(RETRY_DELAY_MS * (index + 1))
         }

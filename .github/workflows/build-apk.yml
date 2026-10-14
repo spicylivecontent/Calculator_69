@@ -73,13 +73,17 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           # Korta annotations så att felen syns direkt i check-run-fliken.
+          # Loggens sista rader följer alltid med: konfigurations- och
+          # beroenderesolveringsfel ("Execution failed", "Could not resolve")
+          # matchar inte mönstren ovan och syns annars bara i den fullständiga loggen.
           {
             grep -E '^e: ' gradle-build.log | head -n 8
             if [ -d "$TESTDIR" ]; then
               grep -h -B1 '<failure' "$TESTDIR"/*.xml | head -n 20
             fi
             grep -E 'FAILED|AssertionError|ComparisonFailure|expected:' gradle-build.log | head -n 20
-          } | awk '!seen[$0]++' | head -n 30 | while IFS= read -r line; do
+            tail -n 30 gradle-build.log
+          } | awk '!seen[$0]++' | head -n 48 | while IFS= read -r line; do
             line=${line//'%'/'%25'}
             line=${line//$'\r'/'%0D'}
             echo "::error title=Gradle diagnostic::$line"

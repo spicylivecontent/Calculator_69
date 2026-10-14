@@ -20,7 +20,8 @@ class SiteConfigTest {
         PornhubExtractor(),
         BeegExtractor(),
         YouPornExtractor(),
-        PornTrexExtractor()
+        PornTrexExtractor(),
+        LuxureTvExtractor()
     )
 
     /** Ett typiskt videolänkmönster per sajt, som sajtens regex måste matcha. */
@@ -34,12 +35,13 @@ class SiteConfigTest {
         "pornhub" to "/view_video.php?viewkey=ph1234abcd",
         "beeg" to "/12345678",
         "youporn" to "/watch/12345678/blonde-kitchen/",
-        "porntrex" to "/video/123456/blonde-kitchen/"
+        "porntrex" to "/video/123456/blonde-kitchen/",
+        "luxuretv" to "/videos/blonde-kitchen-12345"
     )
 
     @Test
     fun everySiteIsRegisteredWithAUniqueIdAndLabel() {
-        assertEquals("alla tio sajter ska finnas", 10, extractors.size)
+        assertEquals("alla elva sajter ska finnas", 11, extractors.size)
 
         val ids = extractors.map { it.siteName }
         assertEquals("id:n måste vara unika", ids.size, ids.distinct().size)

@@ -97,7 +97,8 @@ data class SearchResult(
             "pornhub" to "Pornhub",
             "beeg" to "Beeg",
             "youporn" to "YouPorn",
-            "porntrex" to "PornTrex"
+            "porntrex" to "PornTrex",
+            "luxuretv" to "LuxureTV"
         )
 
         fun prettySiteName(site: String): String =
