@@ -10,6 +10,11 @@ import com.calculator.app.security.SqlCipherLoader
 import com.calculator.app.security.VaultDatabaseKey
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
+/**
+ * Vault-databas (SQLCipher). exportSchema=true så att framtida migrationer
+ * kan genereras och granskas. Bump [version] och lägg till Migration när
+ * schema ändras – undvik fallbackToDestructiveMigration i produktion.
+ */
 @Database(
     entities = [
         VideoEntity::class,
@@ -20,7 +25,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         AppSettingsEntity::class
     ],
     version = 1,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
 
@@ -38,13 +43,6 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var layout: VaultDatabasePlan.Layout? = null
 
-        /**
-         * Öppnar (och skapar vid behov) databasen.
-         *
-         * Är SQLCipher och Android Keystore tillgängliga krypteras hela filen med en
-         * slumpad nyckel som förvaras krypterad i Keystore. Om krypteringen inte
-         * fungerar avbryts öppningen; UI visar ett fel utan att skriva klartext.
-         */
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
@@ -62,13 +60,10 @@ abstract class AppDatabase : RoomDatabase() {
 
             return Room.databaseBuilder(context, AppDatabase::class.java, plan.databaseName)
                 .openHelperFactory(SupportOpenHelperFactory(passphrase, null, true))
+                // När version > 1: .addMigrations(MIGRATION_1_2, …)
                 .build()
         }
 
-        /**
-         * Flyttar innehållet från den gamla okrypterade databasen första gången appen
-         * startas efter uppdateringen. Returnerar antalet rader som flyttades.
-         */
         suspend fun migrateLegacyIfNeeded(context: Context): Int? {
             val database = getInstance(context)
             val source = layout?.migrateFrom ?: return null
