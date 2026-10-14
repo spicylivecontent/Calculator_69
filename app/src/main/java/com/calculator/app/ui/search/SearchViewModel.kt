@@ -817,7 +817,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val normalized = term.lowercase(Locale.ROOT).trim()
         if (normalized.isBlank()) return false
         if (normalized.contains(' ')) return text.contains(normalized)
-        return Regex("(?<![\\\\p{L}\\\\p{N}])" + Regex.escape(normalized) + "(?![\\\\p{L}\\\\p{N}])")
+        return Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(normalized) + "(?![\\p{L}\\p{N}])")
             .containsMatchIn(text)
     }
 
