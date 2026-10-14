@@ -65,6 +65,24 @@ object ResultRanker {
 
     private val SOLO_QUERY_TERMS = setOf("solo", "masturbation", "onani")
 
+    /**
+     * Synonymer som räknas som träff för sällsynta termer: sajterna skriver ofta
+     * ut "ass to mouth" i stället för "atm". Utan aliaserna straffas och filtreras
+     * ekvivoka träffar bort fast de matchar frågan semantiskt.
+     */
+    private val RARE_TERM_ALIASES: Map<String, List<String>> = mapOf(
+        "scat" to listOf("scatology", "toilet", "poop", "pooping", "dirty ass"),
+        "atm" to listOf("a2m", "ass to mouth", "asstomouth", "ass 2 mouth"),
+        "a2m" to listOf("atm", "ass to mouth", "asstomouth"),
+        "fisting" to listOf("fist"),
+        "pegging" to listOf("strapon", "strap on", "strap-on"),
+        "cbt" to listOf("cock and ball", "ballbusting", "ball busting"),
+        "watersports" to listOf("water sports", "golden shower", "piss", "pee")
+    )
+
+    private fun rareTermMatches(haystack: String, rare: String): Boolean =
+        haystack.contains(rare) || RARE_TERM_ALIASES[rare].orEmpty().any { haystack.contains(it) }
+
     fun normalizeTitle(title: String): String =
         title.lowercase(Locale.ROOT)
             .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
@@ -138,7 +156,7 @@ object ResultRanker {
         val normalizedTerms = terms.map { normalizeTitle(it) }.filter { it.isNotBlank() }
         val rareInQuery = normalizedTerms.filter { it in RARE_QUERY_TERMS }
         for (rare in rareInQuery) {
-            if (haystack.contains(rare)) score += RARE_HIT_BONUS
+            if (rareTermMatches(haystack, rare)) score += RARE_HIT_BONUS
             else score += RARE_MISS_PENALTY
         }
 
@@ -199,7 +217,7 @@ object ResultRanker {
         if (rare.isEmpty()) return results
         return results.filter { result ->
             val hay = normalizeTitle(result.searchableText)
-            rare.any { hay.contains(it) }
+            rare.any { rareTermMatches(hay, it) }
         }
     }
 

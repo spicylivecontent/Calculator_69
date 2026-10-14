@@ -103,12 +103,14 @@ class SearchPlanner {
             }
         }
 
-        for (phrase in quotedPhrases) {
-            addQuery(phrase, listOf(phrase))
-        }
-
         if (common.isNotEmpty()) {
             addQuery(common.joinToString(" "), common, isPrimary = rare.isEmpty())
+        }
+
+        // Citatfraser läggs till efter huvudfrågan: de är precisionsalternativ,
+        // inte ersättare för den vanliga sökningen (se quotedPhrasesAreKeptTogether).
+        for (phrase in quotedPhrases) {
+            addQuery(phrase, listOf(phrase))
         }
 
         if (primaryTerms.size > 1) {

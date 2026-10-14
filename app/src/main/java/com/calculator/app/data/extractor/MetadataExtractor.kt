@@ -19,6 +19,10 @@ import java.util.Locale
  * Källor i prioritetsordning: strukturerad data (`application/ld+json`), Open Graph-
  * och itemprop-metataggar, och sist vanliga element på sidan. Ingen videoström
  * plockas fram – uppspelningen sker i WebView-spelaren på sajten.
+ *
+ * Resultaten sparas kortvarigt i [MetadataCache] (20 min): när samma detaljsida
+ * berikas igen under en session återanvänds det första svaret i stället för att
+ * hämta och tolka sidan en gång till.
  */
 object MetadataExtractor {
 
@@ -33,6 +37,10 @@ object MetadataExtractor {
         siteName: String = "",
         client: OkHttpClient = NetworkClient.client
     ): VideoMetadata? {
+        // Kort TTL-cache: samma detaljsida berikas ofta flera gånger under en
+        // session, och då räcker det första svaret.
+        MetadataCache.Default.get(detailUrl)?.let { return it }
+
         val html = try {
             Fetch.page(detailUrl, client = client)
         } catch (cancelled: CancellationException) {
@@ -42,7 +50,11 @@ object MetadataExtractor {
         } ?: return null
 
         return try {
-            withContext(Dispatchers.Default) { parse(html, detailUrl, siteName) }
+            withContext(Dispatchers.Default) {
+                parse(html, detailUrl, siteName).also { metadata ->
+                    MetadataCache.Default.put(detailUrl, metadata)
+                }
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

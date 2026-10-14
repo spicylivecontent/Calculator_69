@@ -38,7 +38,8 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install SDK-paket (plattform, byggverktyg, emulator)
-        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools" "emulator"
+        # Sedan API 37 publiceras plattformarna med minor-suffix (android-37.0).
+        run: sdkmanager --install "platforms;android-37.0" "build-tools;36.0.0" "platform-tools" "emulator"
 
       - name: Enable KVM
         run: |
@@ -101,7 +102,11 @@ jobs:
             find app/build -name "TEST-*.xml" -path "*androidTest*" -print 2>/dev/null | while read -r file; do
               grep -h -B1 '<failure' "$file" | head -n 10 || true
             done
-          } | awk '!seen[$0]++' | head -n 25 | while IFS= read -r line; do
+            # Loggens slut fångar konfigurations-/resolveringsfel som inte matchar ovan.
+            if [ -f ui-tests.log ]; then
+              tail -n 25 ui-tests.log
+            fi
+          } | awk '!seen[$0]++' | head -n 40 | while IFS= read -r line; do
             line=${line//'%'/'%25'}
             line=${line//$'\r'/'%0D'}
             echo "::error title=Instrumenterat test::$line"

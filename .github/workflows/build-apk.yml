@@ -26,8 +26,9 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK 36
-        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - name: Install Android SDK 37
+        # Sedan API 37 publiceras plattformarna med minor-suffix (android-37.0).
+        run: sdkmanager --install "platforms;android-37.0" "build-tools;36.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
@@ -46,6 +47,35 @@ jobs:
         if: failure() && steps.build_apk.outcome == 'failure'
         run: |
           TESTDIR=app/build/test-results/testDebugUnitTest
+          # Plocka ut fallerande/felande tester med stack-spår ur JUnit-XML:en.
+          python3 - <<'PYTEST' > /tmp/testfailures.txt || true
+          import glob, html, re
+          import xml.etree.ElementTree as ET
+
+          seen = set()
+          for f in sorted(glob.glob('app/build/test-results/testDebugUnitTest/*.xml')):
+              try:
+                  root = ET.parse(f).getroot()
+              except Exception:
+                  continue
+              for tc in root.iter('testcase'):
+                  bad = tc.find('failure')
+                  if bad is None:
+                      bad = tc.find('error')
+                  if bad is None:
+                      continue
+                  key = "%s.%s" % (tc.get('classname'), tc.get('name'))
+                  if key in seen:
+                      continue
+                  seen.add(key)
+                  msg = html.unescape(bad.get('message') or '').replace('\n', ' ')[:200]
+                  print("%s: %s" % (key, msg or '(ingen beskrivning)'))
+                  body = html.unescape(bad.text or '')
+                  frames = [l.strip() for l in body.splitlines() if l.strip().startswith('at ')]
+                  keep = [l for l in frames if not re.search(r'org\.junit|java\.base|jdk\.|org\.gradle|java\.lang\.reflect|androidx\.test\.internal', l)]
+                  for l in (keep or frames)[:8]:
+                      print("  " + l)
+          PYTEST
           {
             echo "## Gradle build failure details"
             echo
@@ -56,9 +86,11 @@ jobs:
             echo "## Enhetstester"
             echo
             echo '```text'
-            if [ -d "$TESTDIR" ]; then
+            if [ -s /tmp/testfailures.txt ]; then
+              cat /tmp/testfailures.txt
+            elif [ -d "$TESTDIR" ]; then
               grep -h '<testsuite ' "$TESTDIR"/*.xml | head -n 20 || true
-              grep -h -B1 '<failure' "$TESTDIR"/*.xml | head -n 40 || true
+              echo "(inga fallerande test hittades)"
             else
               echo "Inga testresultat hittades."
             fi
@@ -72,13 +104,15 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           # Korta annotations så att felen syns direkt i check-run-fliken.
+          # GitHub skapar max 10 error-annoteringar per steg: lägg därför en rad
+          # per fallerande test först (pythonutdraget ovan), resten av utrymmet
+          # går till kompileringsfel och loggens sista rader.
           {
+            head -n 10 /tmp/testfailures.txt
             grep -E '^e: ' gradle-build.log | head -n 8
-            if [ -d "$TESTDIR" ]; then
-              grep -h -B1 '<failure' "$TESTDIR"/*.xml | head -n 20
-            fi
             grep -E 'FAILED|AssertionError|ComparisonFailure|expected:' gradle-build.log | head -n 20
-          } | awk '!seen[$0]++' | head -n 30 | while IFS= read -r line; do
+            tail -n 30 gradle-build.log
+          } | awk '!seen[$0]++' | head -n 48 | while IFS= read -r line; do
             line=${line//'%'/'%25'}
             line=${line//$'\r'/'%0D'}
             echo "::error title=Gradle diagnostic::$line"

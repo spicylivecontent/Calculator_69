@@ -37,22 +37,62 @@ De mergas därför inte automatiskt och lämnas öppna för samordnad uppgraderi
 
 | PR | Uppdatering | Observerat fel / kvarstående kontroll |
 | --- | --- | --- |
-| #7 | Kotlin 2.0.21 → 2.4.21 | `kotlinOptions.jvmTarget` har blivit ett fel. DSL-felet rättas här, men KSP är fortfarande 2.0.21-1.0.25. En uppdatering av Kotlin ensam är inte en verifierad verktygskedja. |
-| #8 | coroutines 1.9.0 → 1.11.0 | Kotlin-metadata 2.2.0 mot kompilatorns 2.0.0 i både coroutines och transitiv stdlib. Kräver samordnad Kotlin/KSP-uppgradering. |
-| #9 | Compose BOM 2024.10.01 → 2026.09.00 | `checkDebugAarMetadata` misslyckades. Exakt SDK/AGP-krav kunde inte läsas från annotations; råloggarna var inte åtkomliga i granskningsmiljön. Kraven måste kontrolleras, inte antas. |
+| #15 | Kotlin 2.0.21 → 2.4.21 + KSP 2.3.12 + coroutines 1.11.0 | Bygg meddelade inga kompilationsrader i annotations; kräver AGP 9:s inbyggda Kotlin-stöd och Gradle 9.6+. |
+| #16 | Room 2.6.1 → 2.8.5 | Körs i kombination med KSP 2.3.12; kräver verifiering av schemaexport och SQLCipher-samarbete. |
+| #9 | Compose BOM 2024.10.01 → 2026.09.00 | `checkDebugAarMetadata` misslyckades. Compose 1.12 kräver compileSdk 37 och minst AGP 9.1.1. |
 | #10 | Media3 1.5.0 → 1.11.1 | Transitiv stdlib har Kotlin-metadata 2.2.0 mot kompilatorns 2.0.0. Kräver samordnad uppgradering. |
-| #11 | OkHttp 4.12.0 → 5.5.0 | `checkDebugAarMetadata` misslyckades. Exakt orsaksrad saknas i tillgängliga annotations; kompatibilitet och MockWebServer-API måste verifieras i ny CI-körning. |
+| #11 | OkHttp 4.12.0 → 5.5.0 | Uppskjuten. okhttp 5 läser public suffix-listan från appens assets på Android, vilket kräver Android-kontext även i JVM-tester; dessutom drar MockWebServer 5.5.0 in okhttp 5 på testklassvägen medan appen ligger kvar på 4.12.0. PR #17 håller hela nätverkskedjan samlad på 4.12.0 i stället. |
 
 Dependabot grupperar hädanefter Kotlin-pluginerna och KSP för att minska risken
 för fristående, inkompatibla compiler-uppdateringar. Gruppering är inte en garanti
 för kompatibilitet, och befintliga PR:er kan behöva ersättas efter nästa körning.
 
+### Samordnad ersättare (arbetsgren `arena/b2cc8fdd-calculator-69`)
+
+Fem enskilda uppdateringar kan inte bli gröna var för sig; de låser varandras
+krav. En gemensam gren uppgraderar hela kedjan samtidigt:
+
+| Del | Från | Till | Skäl |
+| --- | --- | --- | --- |
+| Gradle (wrapper) | 8.9 | 9.8.1 | AGP 9.4 kräver Gradle 9.6.0+. |
+| AGP | 8.7.3 | 9.4.1 | Inbyggt Kotlin-stöd (kotlin-android-pluginen tillämpas inte längre); stödjer compileSdk 37. |
+| Kotlin | 2.0.21 | 2.4.21 | media3 1.11.1 och coroutines 1.11.0 kräver Kotlin-metadata 2.2+. |
+| KSP | 2.0.21-1.0.25 | 2.3.12 | KSP 2.3.12 stödjer AGP 9:s inbyggda Kotlin; versioneras numera fristående från Kotlin. |
+| Compose BOM | 2024.10.01 | 2026.09.00 | Målet för PR #9; kräver compileSdk 37. |
+| material-icons-extended | via BOM | 1.7.8 (fryst) | Ingår inte i BOM:ens 2026-rad. |
+| Room | 2.6.1 | 2.8.5 | Målet för PR #16. |
+| Media3 | 1.5.0 | 1.11.1 | Målet för PR #10. |
+| OkHttp (+ mockwebserver, okhttp-tls) | 4.12.0 | 4.12.0 (oförändrad) | PR #11 uppskjuten (se Dependabot-tabellen); testberoendena hålls på samma version som appen för en konsekvent klassväg. |
+| coroutines | 1.9.0 | 1.11.0 | Målet i PR #15. |
+| compileSdk | 36 | 37 | Krav från Compose 1.12. targetSdk (35) och minSdk (26) ändras inte. |
+
+JVM-målet för Java och Kotlin förblir 11. Databasversionen är fortfarande 1 och
+SQLCipher-konfigurationen är oförändrad; Room 2.8.5 exporterar samma schema.
+
+Grenen tar dessutom med de innehållsspecifika delar av `fix/priority-improvements`
+som granskningen medvetet skjutit upp, nu omskrivna mot aktuell main i stället för
+att merga grenens äldre utkast (som saknade dokumentationskommentarer och
+innehöll redan ersatt säkerhets-/bygglogik):
+
+- **LuxureTV** (en.luxuretv.com) som elfte sajt, med exemplelänk i `SiteConfigTest`
+  och ett eget listningstest.
+- **MetadataCache**: kort TTL-minnecache (20 min, max 256 poster) kopplad till
+  `MetadataExtractor.fetch`, deterministiskt testad med injicerad klocka.
+- **HostRateLimiter**: per-värd-begränsning (280 ms mellan startider, högst två
+  samtidiga) kring `Fetch.page`, med tester för mellanrum, tak och släpp vid fel.
+
+OkHttp får ligga kvar på 4.12.0 i denna gren: 5.x läser public suffix-listan från
+appens assets på Android och kräver därmed Android-kontext i JVM-testerna, vilket
+inte motiverar migreringsarbetet här (Dependabot #11 stängs som uppskjuten).
+Säkerhets- och byggdelarna på `fix/priority-improvements` ingår inte: de ersattes
+redan av PR #14 (smalare Proguard-regler, aktiv autolåstimer, biometri-hjälpare).
+
 ### Nästa steg för beroendena
 
-1. Välj och dokumentera en kompatibel uppsättning AGP/Gradle/Kotlin/KSP/Room.
-2. Uppdatera kompilator och compiler plugins tillsammans på arbetsgrenen.
-3. Läs de nya AAR-kraven för Compose och nätverkskedjan ur fullständiga byggloggar.
-4. Kör JVM-tester, lint, debug/release-byggen och instrumenterade tester.
+1. ~~Välj och dokumentera en kompatibel uppsättning AGP/Gradle/Kotlin/KSP/Room.~~ (tabellen ovan)
+2. ~~Uppdatera kompilator och compiler plugins tillsammans på arbetsgrenen.~~ (gjort på arbetsgrenen)
+3. ~~Läs de nya AAR-kraven för Compose och nätverkskedjan ur fullständiga byggloggar.~~ (Compose 1.12: compileSdk 37 + AGP 9.1.1; okhttp-android 5.5.0: minCompileSdk 37)
+4. Kör JVM-tester, lint, debug/release-byggen och instrumenterade tester. *(pågår i GitHub Actions på arbetsgrenen)*
 5. Mergea först när alla relevanta kontroller är gröna. Stäng inte de gamla PR:erna
    som lösta förrän deras ändringar verkligen ingår i en verifierad ersättare.
 
