@@ -93,6 +93,12 @@ class SearchPlanner {
         val rare = primaryTerms.filter { normalizeTerm(it) in RARE_TERMS }
         val common = primaryTerms.filter { normalizeTerm(it) !in RARE_TERMS }
 
+        // Run the complete multi-term query first. Rare-term expansions otherwise
+        // consume the limited query budget and broad results can dominate the merged list.
+        if (rare.isNotEmpty() && primaryTerms.size > 1) {
+            addQuery(primaryTerms.joinToString(" "), primaryTerms, isPrimary = true)
+        }
+
         for (term in rare) {
             addQuery(term, listOf(term))
         }
