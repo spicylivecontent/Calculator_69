@@ -10,6 +10,7 @@ import com.calculator.app.security.SqlCipherLoader
 import com.calculator.app.security.VaultDatabaseKey
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
+/** Exported schemas are retained for reviewed, non-destructive migrations. */
 @Database(
     entities = [
         VideoEntity::class,
@@ -20,7 +21,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         AppSettingsEntity::class
     ],
     version = 1,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
 

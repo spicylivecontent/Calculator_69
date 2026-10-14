@@ -4,10 +4,14 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build Debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -36,7 +40,7 @@ jobs:
           set -o pipefail
           # assembleDebugAndroidTest kompilerar UI-testerna också, så att stavfel och
           # API-fel där upptäcks direkt i det snabba jobbet (emulatorjobbet kör dem sedan).
-          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --stacktrace --console=plain 2>&1 | tee gradle-build.log
+          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --stacktrace --console=plain 2>&1 | tee gradle-build.log
 
       - name: Report Gradle failure details
         if: failure() && steps.build_apk.outcome == 'failure'
@@ -127,5 +131,8 @@ jobs:
             app/build/reports/tests/**
             app/build/test-results/**
             app/build/reports/lint-results-debug.*
+            app/schemas/**/*.json
+            app/build/outputs/mapping/release/**
+            gradle-build.log
           if-no-files-found: ignore
           retention-days: 14
