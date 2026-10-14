@@ -73,4 +73,42 @@ class MetadataCacheTest {
         assertEquals(0, cache.size())
         assertNull(cache.get("https://site.example/a"))
     }
+
+    @Test
+    fun tinyCapacityStillEvictsAndNeverExceedsLimit() {
+        val tiny = MetadataCache(ttlMs = 20_000L, maxEntries = 2, clock = { now })
+        tiny.put("https://site.example/a", metadata("https://site.example/a"))
+        now += 10
+        tiny.put("https://site.example/b", metadata("https://site.example/b"))
+        now += 10
+        tiny.put("https://site.example/c", metadata("https://site.example/c"))
+
+        assertEquals(2, tiny.size())
+        assertNull(tiny.get("https://site.example/a"))
+        assertNotNull(tiny.get("https://site.example/b"))
+        assertNotNull(tiny.get("https://site.example/c"))
+    }
+
+    @Test
+    fun replacingEntryAtCapacityDoesNotEvictAnotherUrl() {
+        val tiny = MetadataCache(ttlMs = 20_000L, maxEntries = 2, clock = { now })
+        tiny.put("https://site.example/a", metadata("https://site.example/a", "old"))
+        tiny.put("https://site.example/b", metadata("https://site.example/b", "other"))
+        tiny.put("https://site.example/a", metadata("https://site.example/a", "updated"))
+
+        assertEquals(2, tiny.size())
+        assertEquals("updated", tiny.get("https://site.example/a")?.title)
+        assertNotNull(tiny.get("https://site.example/b"))
+    }
+
+    @Test
+    fun nonPositiveCapacityIsClampedToOne() {
+        val tiny = MetadataCache(ttlMs = 20_000L, maxEntries = 0, clock = { now })
+        tiny.put("https://site.example/a", metadata("https://site.example/a"))
+        tiny.put("https://site.example/b", metadata("https://site.example/b"))
+
+        assertEquals(1, tiny.size())
+        assertNull(tiny.get("https://site.example/a"))
+        assertNotNull(tiny.get("https://site.example/b"))
+    }
 }
