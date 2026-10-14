@@ -1,5 +1,6 @@
 package com.calculator.app.data.extractor
 
+import com.calculator.app.network.HostRateLimiter
 import com.calculator.app.network.NetworkClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -16,10 +17,7 @@ import kotlin.coroutines.resume
 
 /**
  * Gemensam hämtning av HTML från sajterna med rimliga timeouts och maxstorlek.
- *
- * En tillfällig svacka (timeout, nätverksfel eller 5xx/429) försöker vi en gång till efter
- * en kort paus – men bara när det faktiskt kan hjälpa: en sida som svarat 404 eller som
- * ligger på http:// görs det aldrig om försök på.
+ * Alla anrop går via [HostRateLimiter] så att en domän inte får för täta request.
  */
 object Fetch {
 
@@ -31,24 +29,14 @@ object Fetch {
     private const val MAX_REDIRECTS = 5
     private val REDIRECT_CODES = setOf(300, 301, 302, 303, 307, 308)
 
-    /** Vad ett enskilt försök ledde till. */
     internal sealed interface Attempt {
         data class Body(val text: String) : Attempt
-
-        /** Servern svarade, men med ett fel (t.ex. 404, 429, 503). */
         data class HttpError(val code: Int) : Attempt
-
-        /** Ingen kontakt: timeout, nätverksfel eller avbrott. */
         data object NetworkError : Attempt
-
-        /** A redirect response; the target is validated before making another request. */
         data class Redirect(val target: okhttp3.HttpUrl) : Attempt
-
-        /** Förfrågan ska aldrig göras: klartext, för stor kropp eller tom adress. */
         data object Rejected : Attempt
     }
 
-    /** Sant om ett nytt försök kan ge ett annat svar. Ren logik, testas separat. */
     internal fun shouldRetry(attempt: Attempt, attemptIndex: Int, attempts: Int): Boolean {
         if (attemptIndex >= attempts - 1) return false
         return when (attempt) {
@@ -65,19 +53,18 @@ object Fetch {
         timeoutMs: Long = PAGE_TIMEOUT_MS,
         client: OkHttpClient = NetworkClient.client,
         attempts: Int = MAX_ATTEMPTS
-    ): String? {
+    ): String? = HostRateLimiter.withPermit(url) {
         val total = attempts.coerceAtLeast(1)
         var last: Attempt = Attempt.Rejected
         for (index in 0 until total) {
             last = attempt(url, referer, timeoutMs, client)
-            if (last is Attempt.Body) return last.text
+            if (last is Attempt.Body) return@withPermit last.text
             if (!shouldRetry(last, index, total)) break
             delay(RETRY_DELAY_MS * (index + 1))
         }
-        return null
+        null
     }
 
-    /** [client] är samma delade klient som standard; parametern finns för tester. */
     fun pageBlocking(
         url: String,
         referer: String? = null,
@@ -120,7 +107,6 @@ object Fetch {
         return Attempt.Rejected
     }
 
-    /** Executes a prepared OkHttp call without pinning a coroutine worker thread. */
     internal suspend fun <T> awaitResponse(
         call: Call,
         fallback: () -> T,
@@ -161,8 +147,6 @@ object Fetch {
             builder.header("Referer", parsedReferer.toString())
             builder.header("Origin", "${parsedReferer.scheme}://${parsedReferer.host}")
         }
-        // Redirects are followed manually in attempt() so the next URL is validated
-        // before OkHttp can resolve or connect to a different host.
         return client.newCall(builder.build()).also {
             it.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
         }
