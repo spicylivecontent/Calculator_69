@@ -68,7 +68,7 @@ object StreamResolver {
         if (cachedStream != null && isPlayable(cachedStream.url, cachedStream.referer ?: detailUrl)) {
             return cachedStream
         }
-        if (cachedStream != null) cache.remove(detailUrl)
+        if (cachedStream != null) cache.remove(detailUrl, cachedStream)
 
         val resolved = resolve(detailUrl, sourceSite) ?: return null
         if (isPlayable(resolved.url, resolved.referer ?: detailUrl)) {
