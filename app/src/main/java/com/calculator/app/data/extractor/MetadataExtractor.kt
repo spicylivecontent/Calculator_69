@@ -9,16 +9,11 @@ import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import okhttp3.OkHttpClient
-import org.jsoup.nodes.Element
 import java.util.Locale
 
 /**
- * Läser ut all tillgänglig information om en film från dess detaljsida:
- * rubrik, beskrivning, taggar, kategorier, medverkande, kvalitet, längd och datum.
- *
- * Källor i prioritetsordning: strukturerad data (`application/ld+json`), Open Graph-
- * och itemprop-metataggar, och sist vanliga element på sidan. Ingen videoström
- * plockas fram – uppspelningen sker i WebView-spelaren på sajten.
+ * Läser ut all tillgänglig information om en film från dess detaljsida.
+ * Resultat cachas kortvarigt via [MetadataCache].
  */
 object MetadataExtractor {
 
@@ -33,6 +28,8 @@ object MetadataExtractor {
         siteName: String = "",
         client: OkHttpClient = NetworkClient.client
     ): VideoMetadata? {
+        MetadataCache.get(detailUrl)?.let { return it }
+
         val html = try {
             Fetch.page(detailUrl, client = client)
         } catch (cancelled: CancellationException) {
@@ -42,7 +39,11 @@ object MetadataExtractor {
         } ?: return null
 
         return try {
-            withContext(Dispatchers.Default) { parse(html, detailUrl, siteName) }
+            withContext(Dispatchers.Default) {
+                parse(html, detailUrl, siteName).also { metadata ->
+                    MetadataCache.put(detailUrl, metadata)
+                }
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -50,7 +51,6 @@ object MetadataExtractor {
         }
     }
 
-    /** Ren tolkning av HTML – enhetstestbar. */
     fun parse(html: String, detailUrl: String, siteName: String = ""): VideoMetadata {
         if (html.isBlank()) {
             return VideoMetadata(detailUrl = detailUrl, pageMissing = true)
@@ -76,7 +76,6 @@ object MetadataExtractor {
         )?.let { cleanText(it, MAX_DESCRIPTION_CHARS) }
 
         val metaKeywords = metaStrings(doc, "meta[name=keywords]")
-        // keywords i strukturerad data är filmens taggar, genre är kategorier.
         val jsonTags = metaJsonStrings(structured, "keywords")
         val jsonGenres = metaJsonStrings(structured, "genre")
 
@@ -117,10 +116,6 @@ object MetadataExtractor {
         )
     }
 
-    // ------------------------------------------------------------------
-    // Strukturerad data (JSON-LD)
-    // ------------------------------------------------------------------
-
     private fun structuredData(doc: Document): Map<String, Any?>? {
         val scripts = doc.select("script[type=application/ld+json]")
         for (script in scripts) {
@@ -132,7 +127,6 @@ object MetadataExtractor {
             }
             if (video != null) return video
         }
-        // Fall tillbaka på det första objektet om inget har en känd @type.
         return scripts.firstNotNullOfOrNull { MiniJson.findObject(MiniJson.parse(it.data()), { true }) }
     }
 
@@ -154,14 +148,9 @@ object MetadataExtractor {
                     else -> MiniJson.string(item)
                 }
             }
-
             else -> emptyList()
         }
     }
-
-    // ------------------------------------------------------------------
-    // HTML-urval
-    // ------------------------------------------------------------------
 
     private fun metaContent(doc: Document, selector: String): String? =
         doc.selectFirst(selector)?.attr("content")?.trim()?.takeIf { it.isNotEmpty() }
@@ -181,7 +170,6 @@ object MetadataExtractor {
         return null
     }
 
-    /** Som [selectText] men utan längdkrav – kvalitets- och tidsetiketter är ofta korta. */
     private fun selectShortText(doc: Document, selectors: List<String>): String? {
         for (selector in selectors) {
             val text = doc.selectFirst(selector)?.text()?.trim()
@@ -190,7 +178,6 @@ object MetadataExtractor {
         return null
     }
 
-    /** Nyckelord från länkar vars adress avslöjar vad de är (taggar, kategorier, modeller). */
     private fun keywordsMatching(doc: Document, hrefMatch: List<String>): List<String> {
         val found = mutableListOf<String>()
         for (anchor in doc.select("a[href]")) {
@@ -204,12 +191,10 @@ object MetadataExtractor {
         return found
     }
 
-    /** Nyckelord från typiska tagg-/kategoribehållare, även när länken inte säger något. */
     private fun containerKeywords(doc: Document): List<String> {
         val found = mutableListOf<String>()
         for (selector in TAG_CONTAINER_SELECTORS) {
-            val containers = doc.select(selector)
-            for (container in containers) {
+            for (container in doc.select(selector)) {
                 for (anchor in container.select("a[href]")) {
                     val text = anchor.text().trim()
                     if (isUsableKeyword(text)) found.add(text)
@@ -226,7 +211,6 @@ object MetadataExtractor {
         if (text.contains('\n')) return false
         val lower = text.lowercase(Locale.ROOT)
         if (lower in NAVIGATION_WORDS) return false
-        if (NAVIGATION_WORDS.any { lower == it }) return false
         if (lower.endsWith(".com") || lower.endsWith(".net") || lower.endsWith(".tv")) return false
         if (lower.startsWith("http")) return false
         return true
@@ -244,14 +228,9 @@ object MetadataExtractor {
             .distinctBy { it.lowercase(Locale.ROOT) }
             .take(limit)
 
-    /**
-     * Skrapar toppkommentarerna (upp till [MAX_COMMENTS]) från strukturerad JSON-LD,
-     * kommentarscontainrar i DOM:en samt inbäddad kommentarsdata i skriptblock.
-     */
     private fun extractTopComments(doc: Document, structured: Map<String, Any?>?): List<String> {
         val collected = mutableListOf<String>()
 
-        // 1. Strukturerad data (schema.org comment / commentText)
         val rawComments = structured?.get("comment")
         when (rawComments) {
             is Map<*, *> -> {
@@ -268,7 +247,6 @@ object MetadataExtractor {
             }
         }
 
-        // 2. HTML-kommentarselement
         for (selector in COMMENT_SELECTORS) {
             for (element in doc.select(selector)) {
                 val text = element.text().trim()
@@ -280,7 +258,6 @@ object MetadataExtractor {
             if (collected.size >= MAX_COMMENTS * 3) break
         }
 
-        // 3. Inbäddade JSON-kommentarer i skriptblock (vanligt på bl.a. XVideos, xHamster, SpankBang)
         if (collected.size < MAX_COMMENTS) {
             for (script in doc.select("script")) {
                 val data = script.data()
@@ -355,7 +332,6 @@ object MetadataExtractor {
         return DurationParser.toSeconds(title)
     }
 
-    /** Tolkar ISO 8601-längder som "PT1H2M3S". */
     fun parseIsoDuration(raw: String?): Int? {
         val value = raw?.trim()?.uppercase(Locale.ROOT) ?: return null
         if (!value.startsWith("P")) return null
@@ -364,9 +340,7 @@ object MetadataExtractor {
     }
 
     private fun cleanText(raw: String, maxChars: Int): String =
-        raw.replace(WHITESPACE, " ")
-            .trim()
-            .take(maxChars)
+        raw.replace(WHITESPACE, " ").trim().take(maxChars)
 
     private fun firstNonBlank(vararg values: String?): String? =
         values.firstOrNull { !it.isNullOrBlank() }?.trim()
@@ -374,39 +348,16 @@ object MetadataExtractor {
     private val WHITESPACE = Regex("\\s+")
 
     private val DESCRIPTION_SELECTORS = listOf(
-        "[itemprop=description]",
-        ".video-description",
-        ".description",
-        "#description",
-        "[class*=video-desc]",
-        "[class*=description]",
-        ".video-details .text",
-        "meta[name=twitter:description]"
+        "[itemprop=description]", ".video-description", ".description", "#description",
+        "[class*=video-desc]", "[class*=description]", ".video-details .text"
     )
 
-    private val VIEW_SELECTORS = listOf(
-        "[class*=views]",
-        "[id*=views]",
-        ".view-count",
-        "[itemprop=interactionCount]"
-    )
-
-    private val QUALITY_SELECTORS = listOf(
-        ".quality",
-        "[class*=quality]",
-        "[class*=resolution]",
-        "[class*=hd]",
-        "video[data-quality]"
-    )
+    private val VIEW_SELECTORS = listOf("[class*=views]", "[id*=views]", ".view-count", "[itemprop=interactionCount]")
+    private val QUALITY_SELECTORS = listOf(".quality", "[class*=quality]", "[class*=resolution]", "[class*=hd]", "video[data-quality]")
 
     private val TAG_CONTAINER_SELECTORS = listOf(
-        ".tags a[href]",
-        ".video-tags a[href]",
-        "[class*=video-tag] a[href]",
-        "[id*=tags] a[href]",
-        "[class*=tags] a[href]",
-        "[class*=keywords] a[href]",
-        "[class*=video-info] a[href]"
+        ".tags a[href]", ".video-tags a[href]", "[class*=video-tag] a[href]",
+        "[id*=tags] a[href]", "[class*=tags] a[href]", "[class*=keywords] a[href]"
     )
 
     private val TAG_HREFS = listOf("/tag/", "/tags/", "/tag?", "tag=", "/keyword", "/niche")
@@ -414,26 +365,15 @@ object MetadataExtractor {
     private val CATEGORY_HREFS = listOf("/category", "/categories", "/channel", "/channels", "/genre")
 
     private val COMMENT_SELECTORS = listOf(
-        "[itemprop=commentText]",
-        "[itemprop=comment] [itemprop=text]",
-        ".comment-text",
-        ".comment_text",
-        ".comment-body",
-        ".comment-content",
-        ".comment-message",
-        ".cmt-text",
-        ".user-comment",
-        "[class*=comment-text]",
-        "[class*=comment_text]",
-        "[class*=commentBody]",
-        "[class*=comment-content]",
-        "#comments .comment p",
-        ".comments .comment p",
-        ".comments-list .comment p"
+        "[itemprop=commentText]", "[itemprop=comment] [itemprop=text]",
+        ".comment-text", ".comment_text", ".comment-body", ".comment-content", ".comment-message",
+        ".cmt-text", ".user-comment", "[class*=comment-text]", "[class*=comment_text]",
+        "[class*=commentBody]", "[class*=comment-content]",
+        "#comments .comment p", ".comments .comment p", ".comments-list .comment p"
     )
 
     private val SCRIPT_COMMENT_REGEX = Regex(
-        """"(?:comment(?:Text|_text|_body)?|comment_message)"\s*:\s*"([^"\\]{4,240})"""",
+        "\"(?:comment(?:Text|_text|_body)?|comment_message)\"\\s*:\\s*\"([^\"\\\\]{4,240})\"",
         RegexOption.IGNORE_CASE
     )
 
