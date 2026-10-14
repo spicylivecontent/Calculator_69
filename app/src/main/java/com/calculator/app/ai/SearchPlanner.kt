@@ -7,11 +7,10 @@ import java.util.Locale
 /**
  * Gör om användarens text (och valda kategorier) till ett antal konkreta sökfrågor.
  *
- * Poängen är att *allt* användaren söker på ska komma med:
- *  - huvudsökningen använder alla positiva termer (precision)
- *  - varianter breddar träffbilden (valda kategorier, enskilda ord, synonymer, citat)
- *  - negativa uttryck ("no anal", "-anal", "utan rough") blir filter i stället för sökord
- *  - svenska ord översätts till de engelska termer sajterna indexerar
+ * Strategi för träffsäkerhet:
+ *  - Sällsynta termer (scat, atm, fisting …) söks separat först så de inte drunknar
+ *  - Vanliga termer kombineras med sällsynta i mindre grupper
+ *  - Negationer blir filter, svenska ord översätts till sajternas engelska index
  */
 class SearchPlanner {
 
@@ -78,25 +77,52 @@ class SearchPlanner {
             .filter { it.isNotBlank() && normalizeTerm(it) !in excluded }
             .distinct()
 
-        val primaryTerms = (positiveTerms + safeCategoryTerms.filter { normalizeTerm(it) !in excluded }).distinct().take(MAX_PRIMARY_TERMS)
+        val primaryTerms = (positiveTerms + safeCategoryTerms.filter { normalizeTerm(it) !in excluded })
+            .distinct()
+            .take(MAX_PRIMARY_TERMS)
+
         val queries = mutableListOf<SearchQuery>()
-        if (primaryTerms.isNotEmpty()) {
-            queries.add(SearchQuery(text = primaryTerms.joinToString(" "), terms = primaryTerms, isPrimary = true))
+        fun addQuery(text: String, terms: List<String>, isPrimary: Boolean = false) {
+            if (queries.size >= maxQueries) return
+            val cleaned = text.trim()
+            if (cleaned.isBlank()) return
+            if (queries.any { it.text.equals(cleaned, ignoreCase = true) }) return
+            queries.add(SearchQuery(text = cleaned, terms = terms, isPrimary = isPrimary))
         }
 
-        // Varianter i prioritetsordning: citat, valda kategorier, enskilda ord, synonymer.
-        val variants = LinkedHashSet<String>()
-        quotedPhrases.forEach { variants.add(it) }
-        safeCategoryTerms.filter { normalizeTerm(it) !in excluded }.forEach { variants.add(it) }
-        positiveTerms.filter { it.length >= MIN_VARIANT_LENGTH }.forEach { variants.add(it) }
-        parsed.synonymVariants.filter { normalizeTerm(it) !in excluded }.take(MAX_SYNONYM_VARIANTS).forEach { variants.add(it) }
+        val rare = primaryTerms.filter { normalizeTerm(it) in RARE_TERMS }
+        val common = primaryTerms.filter { normalizeTerm(it) !in RARE_TERMS }
 
-        val primaryText = primaryTerms.joinToString(" ")
-        for (variant in variants) {
-            if (queries.size >= maxQueries) break
-            if (variant.isBlank() || variant == primaryText) continue
-            if (queries.any { it.text == variant }) continue
-            queries.add(SearchQuery(text = variant, terms = listOf(variant)))
+        for (term in rare) {
+            addQuery(term, listOf(term))
+        }
+
+        for (r in rare) {
+            for (c in common.take(3)) {
+                addQuery("$r $c", listOf(r, c))
+            }
+        }
+
+        for (phrase in quotedPhrases) {
+            addQuery(phrase, listOf(phrase))
+        }
+
+        if (common.isNotEmpty()) {
+            addQuery(common.joinToString(" "), common, isPrimary = rare.isEmpty())
+        }
+
+        if (primaryTerms.size > 1) {
+            addQuery(primaryTerms.joinToString(" "), primaryTerms, isPrimary = rare.isEmpty() && common.isEmpty())
+        }
+
+        for (term in common.filter { it.length >= MIN_VARIANT_LENGTH }) {
+            addQuery(term, listOf(term))
+        }
+        for (variant in parsed.synonymVariants.filter { normalizeTerm(it) !in excluded }.take(MAX_SYNONYM_VARIANTS)) {
+            addQuery(variant, listOf(variant))
+        }
+        for (cat in safeCategoryTerms.filter { normalizeTerm(it) !in excluded }) {
+            addQuery(cat, listOf(cat))
         }
 
         if (queries.isEmpty()) {
@@ -130,7 +156,6 @@ class SearchPlanner {
         val phrases = mutableListOf<String>()
         val working = StringBuilder(input)
 
-        // Citattecken håller ihop fraser: "sitter pa knana"
         for (match in QUOTED_PATTERN.findAll(input)) {
             val phrase = match.groupValues.getOrNull(1)?.trim().orEmpty()
             if (phrase.length >= MIN_PHRASE_LENGTH) {
@@ -149,7 +174,6 @@ class SearchPlanner {
 
         var remainder = working.toString()
 
-        // Negationer: "no anal", "utan rough", "aldrig X" ...
         for (prefix in NEGATION_PREFIXES.sortedByDescending { it.length }) {
             val pattern = Regex(
                 "(?<![\\p{L}\\p{N}])" + Regex.escape(prefix) + "\\s+([\\p{L}\\p{N}][\\p{L}\\p{N}\\-']*)",
@@ -162,7 +186,6 @@ class SearchPlanner {
             remainder = pattern.replace(remainder, " ")
         }
 
-        // Minus-prefix: "-anal", "-rough"
         val minusPattern = Regex("(?:^|\\s)-([\\p{L}\\p{N}][\\p{L}\\p{N}\\-']*)")
         for (match in minusPattern.findAll(remainder)) {
             val word = match.groupValues.getOrNull(1)?.trim().orEmpty()
@@ -213,7 +236,6 @@ class SearchPlanner {
             .map { it.trim() }
             .filter { it.isNotBlank() }
 
-    /** Slår upp kända svenska/engelska termer, annars behålls ordet precis som användaren skrev det. */
     private fun canonicalTerm(term: String): String {
         val trimmed = term.trim()
         val normalized = normalizeTerm(trimmed)
@@ -221,7 +243,6 @@ class SearchPlanner {
         return SYNONYMS[normalized]?.first() ?: trimmed
     }
 
-    /** Gemener utan accenter – används som nyckel i ordlistan och vid jämförelser. */
     private fun normalizeTerm(term: String): String =
         Normalizer.normalize(term, Normalizer.Form.NFD)
             .replace(Regex("\\p{Mn}+"), "")
@@ -239,13 +260,18 @@ class SearchPlanner {
     }
 
     private companion object {
-        const val DEFAULT_MAX_QUERIES = 5
-        const val MAX_PRIMARY_TERMS = 6
-        const val MAX_SYNONYM_VARIANTS = 2
+        const val DEFAULT_MAX_QUERIES = 8
+        const val MAX_PRIMARY_TERMS = 8
+        const val MAX_SYNONYM_VARIANTS = 3
         const val MIN_VARIANT_LENGTH = 4
         const val MIN_PHRASE_LENGTH = 3
 
         val QUOTED_PATTERN = Regex("\"([^\"]{3,60})\"")
+
+        val RARE_TERMS = setOf(
+            "scat", "atm", "a2m", "fisting", "prolapse", "pegging", "cbt",
+            "watersports", "golden shower", "squirting", "enema", "gap", "gape"
+        )
 
         val NEGATION_PREFIXES = listOf(
             "absolut inte", "inte", "utan", "ingen", "aldrig", "förbjudet", "undvik", "exkludera",
@@ -258,12 +284,7 @@ class SearchPlanner {
             "or", "eller", "any", "all", "från", "fran"
         )
 
-        /**
-         * Svensk/engelsk ordlista. Nycklarna är normaliserade (gemener utan accenter).
-         * Första värdet används i huvudsökningen, resten blir extra sökvarianter.
-         */
         val SYNONYMS: Map<String, List<String>> = mapOf(
-            // Utseende
             "brunett" to listOf("brunette"),
             "brunette" to listOf("brunette", "brown hair"),
             "blond" to listOf("blonde"),
@@ -279,8 +300,6 @@ class SearchPlanner {
             "piercing" to listOf("piercing"),
             "naturlig" to listOf("natural"),
             "smink" to listOf("makeup", "glamour"),
-
-            // Kropp & figur
             "kurvig" to listOf("curvy"),
             "kurvigare" to listOf("curvy"),
             "smal" to listOf("slim"),
@@ -292,19 +311,16 @@ class SearchPlanner {
             "stor byst" to listOf("busty"),
             "stora brost" to listOf("big tits"),
             "langa ben" to listOf("long legs"),
-
-            // Etnicitet
             "asiatisk" to listOf("asian"),
             "asiatiska" to listOf("asian"),
             "latin" to listOf("latina"),
+            "latina" to listOf("latina", "latin", "hispanic"),
             "latinamerikansk" to listOf("latina"),
             "svart" to listOf("ebony"),
             "indisk" to listOf("indian"),
             "arabisk" to listOf("arab"),
             "europeisk" to listOf("european"),
             "skandinavisk" to listOf("scandinavian"),
-
-            // Sällskap & antal
             "par" to listOf("couple"),
             "tva" to listOf("couple"),
             "trekant" to listOf("threesome"),
@@ -314,8 +330,6 @@ class SearchPlanner {
             "bisexuell" to listOf("bisexual"),
             "swinger" to listOf("swinger"),
             "orgie" to listOf("orgy"),
-
-            // Aktivitet
             "klassisk" to listOf("classic sex"),
             "ridande" to listOf("cowgirl"),
             "massage" to listOf("massage"),
@@ -325,9 +339,8 @@ class SearchPlanner {
             "knulla" to listOf("hardcore"),
             "hardcore" to listOf("hardcore"),
             "handjob" to listOf("handjob"),
-            "squirt" to listOf("squirt"),
-
-            // Plats
+            "squirt" to listOf("squirt", "squirting"),
+            "squirting" to listOf("squirting", "squirt"),
             "sovrum" to listOf("bedroom"),
             "sang" to listOf("bed"),
             "kok" to listOf("kitchen"),
@@ -341,8 +354,6 @@ class SearchPlanner {
             "gym" to listOf("gym"),
             "hotell" to listOf("hotel"),
             "lagenhet" to listOf("apartment"),
-
-            // Stämning
             "romantisk" to listOf("romantic"),
             "sensuell" to listOf("sensual"),
             "passionerad" to listOf("passionate"),
@@ -354,8 +365,6 @@ class SearchPlanner {
             "rough" to listOf("rough", "hard"),
             "hard" to listOf("rough", "hard"),
             "mjuk" to listOf("gentle", "sensual"),
-
-            // Rollspel & kostym
             "sjukskoterska" to listOf("nurse"),
             "polis" to listOf("police"),
             "chef" to listOf("boss"),
@@ -365,8 +374,6 @@ class SearchPlanner {
             "underklader" to listOf("lingerie"),
             "strumpbyxor" to listOf("stockings"),
             "lader" to listOf("leather"),
-
-            // Kamera & vinkel
             "narbild" to listOf("close up"),
             "amator" to listOf("amateur"),
             "amatorkamera" to listOf("amateur camera"),
@@ -374,32 +381,25 @@ class SearchPlanner {
             "spegel" to listOf("mirror"),
             "kamera" to listOf("camera"),
             "casting" to listOf("casting"),
-
-            // Produktion & kvalitet
             "langfilm" to listOf("full movie"),
             "retro" to listOf("retro"),
             "vintage" to listOf("vintage"),
-
-            // Fetisch
             "fotfetisch" to listOf("feet fetish", "feet"),
             "fotter" to listOf("feet"),
-            "leksaker" to listOf("sex toys"),
+            "leksaker" to listOf("sex toys", "dildo"),
+            "dildo" to listOf("dildo", "toy", "vibrator"),
             "binda" to listOf("bondage"),
-
-            // Avslutning
             "avslut" to listOf("cumshot"),
             "avslutning" to listOf("cumshot"),
-
-            // Vanliga engelska lånord & förkortningar
             "milf" to listOf("milf", "mature"),
             "mogen" to listOf("mature"),
             "pov" to listOf("pov", "point of view"),
             "solo" to listOf("solo", "masturbation"),
-            "latina" to listOf("latina", "latin"),
-            "atm" to listOf("atm", "ass to mouth"),
+            "atm" to listOf("atm", "ass to mouth", "a2m"),
             "a2m" to listOf("atm", "ass to mouth"),
             "ass to mouth" to listOf("ass to mouth", "atm"),
-            "nonstop" to listOf("nonstop", "continuous"),
+            "scat" to listOf("scat", "scat play", "scatology"),
+            "nonstop" to listOf("nonstop", "continuous", "relentless"),
             "non stop" to listOf("nonstop", "continuous"),
             "dp" to listOf("dp", "double penetration"),
             "bj" to listOf("blowjob", "oral"),
@@ -409,7 +409,9 @@ class SearchPlanner {
             "homemade" to listOf("homemade"),
             "outdoor" to listOf("outdoor"),
             "kitchen" to listOf("kitchen"),
-            "bedroom" to listOf("bedroom")
+            "bedroom" to listOf("bedroom"),
+            "fisting" to listOf("fisting"),
+            "anal" to listOf("anal")
         )
     }
 }

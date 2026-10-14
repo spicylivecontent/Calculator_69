@@ -6,35 +6,41 @@ import java.util.Locale
 
 /**
  * Hybrid relevansberäkning (regelbaserad + lokal AI-embedding), dubblettrensning
- * och sortering av sökträffar. Ren Kotlin (ingen Android-kod) så att logiken
- * kan enhetstestas.
+ * och sortering av sökträffar.
+ *
+ * Poängsätter rubrik, taggar, medverkande, kategorier, beskrivning, kommentarer
+ * och längd. Straffar par/kille när query innehåller solo, och kräver att
+ * sällsynta termer (scat, atm …) faktiskt syns i skrapad text.
  */
 object ResultRanker {
 
-    const val SEMANTIC_WEIGHT = 60
-    private const val MIN_SEMANTIC_SIMILARITY = 0.15f
-    private const val SEMANTIC_SEARCH_MIN_SCORE = 20
+    const val SEMANTIC_WEIGHT = 70
+    private const val MIN_SEMANTIC_SIMILARITY = 0.12f
+    private const val SEMANTIC_SEARCH_MIN_SCORE = 18
 
-    private const val PHRASE_HIT = 40
-    private const val TOKEN_HIT = 14
-    private const val PARTIAL_HIT = 6
+    private const val PHRASE_HIT = 45
+    private const val TOKEN_HIT = 16
+    private const val PARTIAL_HIT = 7
     private const val PLAYABLE_HIT = 8
     private const val SHORT_TITLE_PENALTY = -6
-    private const val TAG_HIT = 18
+    private const val TAG_HIT = 22
     private const val PERFORMER_HIT = 20
-    private const val CATEGORY_HIT = 14
-    private const val DESCRIPTION_HIT = 9
-    private const val COMMENT_HIT = 10
-    private const val COVERAGE_BONUS = 30
-    private const val UNTOUCHED_METADATA_BONUS = 4
+    private const val CATEGORY_HIT = 16
+    private const val DESCRIPTION_HIT = 12
+    private const val COMMENT_HIT = 14
+    private const val COVERAGE_BONUS = 35
+    private const val UNTOUCHED_METADATA_BONUS = 5
+
+    private const val COUPLE_PENALTY = -60
+    private const val RARE_MISS_PENALTY = -50
+    private const val RARE_HIT_BONUS = 40
+    private const val SOLO_PURE_BONUS = 28
 
     private val minTokenLength = 3
 
-    /** Aktiv lokal embedding-motor för semantisk poängsättning. */
     @Volatile
     var embeddingEngine: EmbeddingEngine = OnnxEmbeddingEngine.Default
 
-    /** Gör att AI-ranking kan slås på/av i inställningarna. */
     @Volatile
     var semanticEnabled: Boolean = true
 
@@ -44,6 +50,20 @@ object ResultRanker {
     )
 
     private val qualityWords = setOf("4k", "uhd", "2160p", "1440p", "1080p", "60fps", "hd")
+
+    private val COUPLE_SIGNALS = setOf(
+        "couple", "boyfriend", "girlfriend", "husband", "wife", "guy", "man fucks",
+        "cock", "dick", "penis", "he fucks", "with a guy", "mmf", "mfm", "threesome",
+        "duo", "partners", "real couple", "amateur couple", "fucked by", "his cock",
+        "her boyfriend", "stepbrother", "step brother"
+    )
+
+    private val RARE_QUERY_TERMS = setOf(
+        "scat", "atm", "a2m", "fisting", "prolapse", "pegging", "cbt",
+        "watersports", "enema"
+    )
+
+    private val SOLO_QUERY_TERMS = setOf("solo", "masturbation", "onani")
 
     fun normalizeTitle(title: String): String =
         title.lowercase(Locale.ROOT)
@@ -83,14 +103,11 @@ object ResultRanker {
         return score
     }
 
-    /**
-     * Regelbaserad baspoäng som räknar in rubrik samt skrapad information (taggar,
-     * medverkande, kategorier, beskrivning och toppkommentarer).
-     */
     fun ruleBasedRelevanceFor(result: SearchResult, terms: List<String>): Int {
         var score = relevanceFor(result.title, terms)
         if (terms.isEmpty()) return score
 
+        val haystack = normalizeTitle(result.searchableText)
         val normalizedTags = result.tags.map { normalizeTitle(it) }.filter { it.isNotEmpty() }
         val normalizedPerformers = result.performers.map { normalizeTitle(it) }.filter { it.isNotEmpty() }
         val normalizedCategories = result.categories.map { normalizeTitle(it) }.filter { it.isNotEmpty() }
@@ -118,16 +135,29 @@ object ResultRanker {
             }
         }
 
+        val normalizedTerms = terms.map { normalizeTitle(it) }.filter { it.isNotBlank() }
+        val rareInQuery = normalizedTerms.filter { it in RARE_QUERY_TERMS }
+        for (rare in rareInQuery) {
+            if (haystack.contains(rare)) score += RARE_HIT_BONUS
+            else score += RARE_MISS_PENALTY
+        }
+
+        val wantsSolo = normalizedTerms.any { it in SOLO_QUERY_TERMS }
+        if (wantsSolo) {
+            val hasCoupleSignal = COUPLE_SIGNALS.any { haystack.contains(it) }
+            if (hasCoupleSignal) {
+                score += COUPLE_PENALTY
+            } else if (haystack.contains("solo") || haystack.contains("masturbation")) {
+                score += SOLO_PURE_BONUS
+            }
+        }
+
         val coverage = result.coverageOf(terms)
         if (coverage >= 1f) score += COVERAGE_BONUS else score += (coverage * COVERAGE_BONUS).toInt()
         if (result.isEnriched) score += UNTOUCHED_METADATA_BONUS
         return score
     }
 
-    /**
-     * Semantisk poäng (0..60) via lokal embedding-modell och cosine similarity:
-     * `(semanticSimilarity * 60).toInt()`.
-     */
     fun semanticScoreFor(
         result: SearchResult,
         terms: List<String>,
@@ -146,11 +176,6 @@ object ResultRanker {
         }
     }
 
-    /**
-     * Hybrid relevans: `ruleBasedScore + (semanticSimilarity * 60).toInt()`.
-     * Fångar både exakta nyckelord och semantiska samband i rubrik, taggar,
-     * medverkande, kategorier, beskrivning och toppkommentarer.
-     */
     fun relevanceFor(
         result: SearchResult,
         terms: List<String>,
@@ -162,7 +187,6 @@ object ResultRanker {
         return ruleBasedScore + semanticScore
     }
 
-    /** Sant om varje term finns i rubriken, taggarna, medverkande, beskrivningen eller kommentarerna. */
     fun matchesEverything(result: SearchResult, terms: List<String>): Boolean {
         val wanted = terms.map { it.trim() }.filter { it.isNotEmpty() }
         if (wanted.isEmpty()) return true
@@ -170,7 +194,15 @@ object ResultRanker {
         return wanted.all { haystack.contains(it.lowercase(Locale.ROOT)) }
     }
 
-    /** Avancerad sökning direkt i allt som skrapats in (inklusive kommentarerna och semantisk matchning). */
+    fun requireRareMatches(results: List<SearchResult>, terms: List<String>): List<SearchResult> {
+        val rare = terms.map { normalizeTitle(it) }.filter { it in RARE_QUERY_TERMS }
+        if (rare.isEmpty()) return results
+        return results.filter { result ->
+            val hay = normalizeTitle(result.searchableText)
+            rare.any { hay.contains(it) }
+        }
+    }
+
     fun searchScraped(results: List<SearchResult>, text: String): List<SearchResult> {
         val terms = tokenize(text)
         if (terms.isEmpty()) return results
@@ -187,7 +219,6 @@ object ResultRanker {
             )
     }
 
-    /** Filtrerar på valda taggar/kategorier (alla måste finnas). */
     fun filterByTags(results: List<SearchResult>, tags: Collection<String>): List<SearchResult> {
         val wanted = tags.map { normalizeTitle(it) }.filter { it.isNotEmpty() }
         if (wanted.isEmpty()) return results
@@ -197,7 +228,6 @@ object ResultRanker {
         }
     }
 
-    /** Alla taggar som förekommer i en resultatlista, vanligast först. */
     fun tagCloud(results: List<SearchResult>, limit: Int = 24): List<String> =
         results.flatMap { it.tags }
             .map { it.trim() }
@@ -209,14 +239,14 @@ object ResultRanker {
             .map { entry -> results.flatMap { it.tags }.first { tag -> tag.trim().lowercase(Locale.ROOT) == entry.key }.trim() }
             .take(limit)
 
-    /** Sätter hybridrelevans (regelbaserad + semantisk), tar bort dubbletter och sorterar spelbara träffar först. */
     fun rank(
         results: List<SearchResult>,
         terms: List<String>,
         engine: EmbeddingEngine = embeddingEngine
     ): List<SearchResult> {
+        val afterRare = requireRareMatches(results, terms)
         val scored = dedupeByTitle(
-            results.map { result ->
+            afterRare.map { result ->
                 result.copy(
                     relevance = relevanceFor(result, terms, engine) +
                         if (result.isPlayable) PLAYABLE_HIT else 0
@@ -230,7 +260,6 @@ object ResultRanker {
         )
     }
 
-    /** Tar bort i praktiken identiska titlar (samma klipp kan dyka upp på flera sajter). */
     fun dedupeByTitle(results: List<SearchResult>): List<SearchResult> {
         val seen = LinkedHashMap<String, SearchResult>()
         val seenIds = HashSet<String>()
