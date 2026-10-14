@@ -29,6 +29,7 @@ import com.calculator.app.data.model.LengthFilter
 import com.calculator.app.data.model.Playability
 import com.calculator.app.data.model.ResultRanker
 import com.calculator.app.data.model.SearchResult
+import com.calculator.app.data.model.SearchTextMatcher
 import com.calculator.app.data.model.SortOrder
 import com.calculator.app.data.taxonomy.SearchTaxonomy
 import com.calculator.app.data.taxonomy.Subcategory
@@ -776,7 +777,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     ): Boolean {
         val text = result.searchableText.lowercase(Locale.ROOT)
         val filters = if (includeQueryNegatives) blockedWords else dislikedWords
-        return AgeSafety.containsBlockedTerm(text) || filters.any { text.contains(it) }
+        return AgeSafety.containsBlockedTerm(text) || filters.any { SearchTextMatcher.containsTerm(text, it) }
     }
 
     /**
@@ -813,13 +814,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun containsWholeTerm(text: String, term: String): Boolean {
-        val normalized = term.lowercase(Locale.ROOT).trim()
-        if (normalized.isBlank()) return false
-        if (normalized.contains(' ')) return text.contains(normalized)
-        return Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(normalized) + "(?![\\p{L}\\p{N}])")
-            .containsMatchIn(text)
-    }
+    private fun containsWholeTerm(text: String, term: String): Boolean =
+        SearchTextMatcher.containsTerm(text, term)
 
     private fun publishResults() {
         val plan = activePlan
