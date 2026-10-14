@@ -18,6 +18,12 @@ interface SiteExtractor {
     suspend fun search(query: String, page: Int = 1): List<SearchResult>
 }
 
+/** Ett hämtfel som kan rapporteras i stället för att se ut som en giltig nollträff. */
+class SiteFetchException(
+    siteName: String,
+    message: String
+) : java.io.IOException("$siteName: $message")
+
 /**
  * Gemensam bas för alla sajter: bygger sök-URL:en och parsar resultatlistan
  * med den strukturella parsaren i [ExtractorSupport].
@@ -45,7 +51,10 @@ abstract class BaseSiteExtractor : SiteExtractor {
         } catch (_: Exception) {
             return emptyList()
         }
-        val html = Fetch.page(url) ?: return emptyList()
+        val html = Fetch.page(url) ?: throw SiteFetchException(
+            siteName = siteName,
+            message = "Kunde inte hämta söksidan (nätverksfel, HTTP-fel eller avvisad omdirigering)"
+        )
         return try {
             val parsed = ExtractorSupport.parseListings(html, listing)
             if (parsed.isNotEmpty()) return parsed
