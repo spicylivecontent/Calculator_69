@@ -67,9 +67,13 @@ object ExtractorSupport {
         val doc = Jsoup.parse(html, config.baseUrl)
         val results = LinkedHashMap<String, SearchResult>()
 
-        for (anchor in doc.select("a[href]")) {
-            val href = anchor.attr("href")
-            if (href.isBlank() || href.startsWith("#") || href.startsWith("javascript")) continue
+        // Some responsive/JS-heavy templates store the detail URL on the card instead
+        // of a real anchor. Validate these exactly like ordinary hrefs before accepting them.
+        for (anchor in doc.select("a[href], [data-href], [data-url], [data-video-url]")) {
+            val href = listOf("href", "data-href", "data-video-url", "data-url")
+                .firstNotNullOfOrNull { attribute -> anchor.attr(attribute).trim().takeIf { it.isNotBlank() } }
+                ?: continue
+            if (href.startsWith("#") || href.startsWith("javascript", ignoreCase = true)) continue
             if (config.requireHrefContains != null && !href.contains(config.requireHrefContains)) continue
 
             val match = config.hrefPattern.find(href) ?: continue
@@ -137,9 +141,11 @@ object ExtractorSupport {
         val config = genericConfig(siteName, baseUrl)
         val results = LinkedHashMap<String, SearchResult>()
 
-        for (anchor in doc.select("a[href]")) {
+        for (anchor in doc.select("a[href], [data-href], [data-url], [data-video-url]")) {
             if (results.size >= limit) break
-            val href = anchor.attr("href").trim()
+            val href = listOf("href", "data-href", "data-video-url", "data-url")
+                .firstNotNullOfOrNull { attribute -> anchor.attr(attribute).trim().takeIf { it.isNotBlank() } }
+                ?: continue
             if (!looksLikeVideoHref(href)) continue
 
             val detailUrl = StreamSelection.normalize(href, baseUrl) ?: continue
