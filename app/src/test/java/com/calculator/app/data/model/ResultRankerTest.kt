@@ -234,6 +234,25 @@ class ResultRankerTest {
     }
 
     @Test
+    fun rareTermMatchingUsesWholeWordBoundaries() {
+        val falseScat = result("false-scat", "Scatterbrain interview")
+        val trueScat = result("true-scat", "Scat play")
+        val falseAtmAlias = result("false-atm", "A2many amateur clip")
+        val trueAtmAlias = result("true-atm", "A2M scene")
+
+        assertTrue(ResultRanker.requireRareMatches(listOf(falseScat), listOf("scat")).isEmpty())
+        assertEquals(
+            listOf("true-scat"),
+            ResultRanker.requireRareMatches(listOf(falseScat, trueScat), listOf("scat")).map { it.id }
+        )
+        assertTrue(ResultRanker.requireRareMatches(listOf(falseAtmAlias), listOf("atm")).isEmpty())
+        assertEquals(
+            listOf("true-atm"),
+            ResultRanker.requireRareMatches(listOf(falseAtmAlias, trueAtmAlias), listOf("atm")).map { it.id }
+        )
+    }
+
+    @Test
     fun hybridSemanticRankingBoostsMatchingConceptsAndComments() {
         val generic = result(
             id = "generic",
