@@ -135,6 +135,9 @@ dependencies {
     // Enhetstester som kör mot en lokal HTTPS-server (MockWebServer)
     testImplementation("com.squareup.okhttp3:mockwebserver:5.5.0")
     testImplementation("com.squareup.okhttp3:okhttp-tls:5.5.0")
+    // Robolectric ger JVM-testerna en Android-kontext (krävs av okhttp 5:s
+    // public suffix-databas som läses från appens assets).
+    testImplementation("org.robolectric:robolectric:4.17")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

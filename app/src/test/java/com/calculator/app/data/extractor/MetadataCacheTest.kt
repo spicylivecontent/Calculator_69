@@ -1,5 +1,6 @@
 package com.calculator.app.data.extractor
 
+import com.calculator.app.data.model.VideoMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
