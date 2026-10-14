@@ -21,7 +21,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -58,47 +59,37 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
 
-    // Material Icons Extended (WatchLater, VideoLibrary, m.fl.)
     implementation("androidx.compose.material:material-icons-extended")
 
-    // ViewModel Compose + viewModelScope extension
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
 
-    // Math engine
     implementation("net.objecthunter:exp4j:0.4.8")
 
-    // Biometric
     implementation("androidx.biometric:biometric:1.1.0")
 
-    // Room
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-    // SQLCipher – kryptering av hela databasfilen
     implementation(variantOf(libs.sqlcipher.android) { artifactType("aar") })
     implementation(libs.androidx.sqlite)
 
-    // Media3 / ExoPlayer
+    // Media3 – optional native path; WebView is primary player
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.common)
 
-    // Networking + HTML parsing
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jsoup:jsoup:1.18.1")
 
-    // Coil för thumbnails
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     testImplementation(libs.junit)
 
-    // Enhetstester som kör mot en lokal HTTPS-server (MockWebServer)
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     androidTestImplementation(libs.androidx.junit)
