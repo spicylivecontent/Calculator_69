@@ -19,7 +19,9 @@ class SearchPlanner {
         val negatives: List<String>,
         val terms: List<String>,
         val explanation: String,
-        val blockedReason: String? = null
+        val blockedReason: String? = null,
+        /** Canonical positive terms that must be present in enriched metadata for strict matching. */
+        val requiredTerms: List<String> = emptyList()
     ) {
         val isEmpty: Boolean get() = queries.isEmpty()
     }
@@ -93,6 +95,12 @@ class SearchPlanner {
         val rare = primaryTerms.filter { normalizeTerm(it) in RARE_TERMS }
         val common = primaryTerms.filter { normalizeTerm(it) !in RARE_TERMS }
 
+        // Run the complete multi-term query first. Rare-term expansions otherwise
+        // consume the limited query budget and broad results can dominate the merged list.
+        if (rare.isNotEmpty() && primaryTerms.size > 1) {
+            addQuery(primaryTerms.joinToString(" "), primaryTerms, isPrimary = true)
+        }
+
         for (term in rare) {
             addQuery(term, listOf(term))
         }
@@ -140,7 +148,8 @@ class SearchPlanner {
             queries = queries,
             negatives = negatives,
             terms = queries.flatMap { it.terms }.distinct(),
-            explanation = buildExplanation(queries, negatives)
+            explanation = buildExplanation(queries, negatives),
+            requiredTerms = primaryTerms
         )
     }
 
