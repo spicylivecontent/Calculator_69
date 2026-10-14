@@ -69,4 +69,17 @@ class StreamCacheTest {
         assertSame(replacement, cache.get("a"))
         assertTrue(cache.get("b") != null)
     }
+
+    @Test
+    fun staleProbeCannotRemoveConcurrentReplacement() {
+        val cache = StreamCache(ttlMs = 10_000L, maxEntries = 2, clock = { now })
+        val old = stream("old")
+        val replacement = stream("replacement")
+        cache.put("a", old)
+        cache.put("a", replacement)
+
+        cache.remove("a", old)
+
+        assertSame(replacement, cache.get("a"))
+    }
 }
