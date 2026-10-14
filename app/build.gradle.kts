@@ -2,14 +2,16 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    // AGP 9 kompilerar Kotlin själv ("built-in Kotlin"); därför tillämpas inte
+    // kotlin-android här. Kotlin-versionen pinas av plugin-deklarationen i rotbyggfilen.
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
 
 android {
     namespace = "com.calculator.app"
-    compileSdk = 36
+    // Compose 1.12 (BOM 2026.09.00) och okhttp-android 5.5.0 kräver compileSdk 37.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.calculator.app"
@@ -68,8 +70,9 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
 
-    // Material Icons Extended (WatchLater, VideoLibrary, m.fl.)
-    implementation("androidx.compose.material:material-icons-extended")
+    // Material Icons Extended (WatchLater, VideoLibrary, m.fl.) – fryses på 1.7.8,
+    // ingår inte längre i Compose BOM från 2026-raderna.
+    implementation("androidx.compose.material:material-icons-extended:${libs.versions.composeMaterialIcons.get()}")
 
     // ViewModel Compose + viewModelScope extension
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
@@ -104,13 +107,13 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     testImplementation(libs.junit)
 
     // Enhetstester som kör mot en lokal HTTPS-server (MockWebServer)
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.5.0")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:5.5.0")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

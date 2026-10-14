@@ -38,7 +38,7 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install SDK-paket (plattform, byggverktyg, emulator)
-        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools" "emulator"
+        run: sdkmanager --install "platforms;android-37" "build-tools;36.0.0" "platform-tools" "emulator"
 
       - name: Enable KVM
         run: |

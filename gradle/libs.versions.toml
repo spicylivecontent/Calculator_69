@@ -1,16 +1,21 @@
 [versions]
-agp = "8.7.3"
-kotlin = "2.0.21"
+# Samordnad verktygskedja (UNDERHALL.md): AGP 9 kräver Gradle 9.6+ och har
+# inbyggt Kotlin-stöd; Compose BOM 2026.09.00 (Compose 1.12) och okhttp-android
+# 5.5.0 kräver compileSdk 37; media3 1.11.1 kräver kotlin-stdlib 2.2+.
+agp = "9.4.1"
+kotlin = "2.4.21"
 coreKtx = "1.15.0"
 junit = "4.13.2"
 junitVersion = "1.2.1"
 espressoCore = "3.6.1"
 lifecycleRuntimeKtx = "2.8.7"
 activityCompose = "1.9.3"
-composeBom = "2024.10.01"
-room = "2.6.1"
-ksp = "2.0.21-1.0.25"
-media3 = "1.5.0"
+composeBom = "2026.09.00"
+# Material-ikonerna fryses på 1.7.8; BOM:en levererar inte längre ikonbiblioteken.
+composeMaterialIcons = "1.7.8"
+room = "2.8.5"
+ksp = "2.3.12"
+media3 = "1.11.1"
 sqlcipher = "4.19.1"
 androidxSqlite = "2.7.0"
 
