@@ -85,6 +85,21 @@ class MultiSiteSearcher(
 
         val selected = if (siteIds.isEmpty()) activeExtractors
         else activeExtractors.filter { it.siteName in siteIds }
+
+        // Avoid spending one timeout per site when Android already reports no internet.
+        if (network.isOffline) {
+            val reports = selected.map { extractor ->
+                SiteSearchReport(
+                    siteId = extractor.siteName,
+                    label = extractor.label,
+                    count = 0,
+                    ok = false,
+                    message = "Ingen nätverksanslutning"
+                )
+            }
+            return@coroutineScope SearchOutcome(results = emptyList(), reports = reports)
+        }
+
         val siteSemaphore = Semaphore(network.siteParallelism.coerceAtLeast(1))
 
         val perSite = selected.map { extractor ->
@@ -136,8 +151,9 @@ class MultiSiteSearcher(
                 siteId = site.info.id,
                 label = site.info.label,
                 count = site.results.size,
-                ok = site.results.isNotEmpty() || site.failure == null,
-                message = site.failure.takeIf { site.results.isEmpty() }
+                // Partial results are useful, but a failed query variant must remain visible.
+                ok = site.failure == null,
+                message = site.failure
             )
         }
 

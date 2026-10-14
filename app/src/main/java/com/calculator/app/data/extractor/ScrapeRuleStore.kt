@@ -49,7 +49,7 @@ class ScrapeRuleStore(
     ) {
         /** Rad som visas i inställningarna. */
         fun label(): String = when {
-            source == Source.BUILT_IN -> "Inbyggda regler (10 sajter)"
+            source == Source.BUILT_IN -> "Inbyggda regler"
             else -> buildString {
                 append(source.label)
                 append(" v")
