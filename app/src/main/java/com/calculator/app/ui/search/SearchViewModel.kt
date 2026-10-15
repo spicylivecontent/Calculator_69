@@ -1241,6 +1241,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         sourceSite = sourceSite,
         playability = if (detailPageUrl.isNullOrBlank()) Playability.UNPLAYABLE else Playability.PLAYABLE,
         tags = tags.split(',').map { it.trim() }.filter { it.isNotBlank() },
+        description = snippet,
         qualityLabel = quality
     )
 
