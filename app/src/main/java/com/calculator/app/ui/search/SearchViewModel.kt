@@ -821,7 +821,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val generation = searchGeneration
         val queryTexts = listOf(
             activePlan?.terms?.joinToString(" ").orEmpty(),
-            scrapedQuery
+            ResultRanker.tokenize(query).joinToString(" "),
+            ResultRanker.tokenize(scrapedQuery).joinToString(" ")
         ).filter { it.isNotBlank() }.distinct()
         val snapshots = items.distinctBy { it.id }.map { item ->
             item to "${item.id}:${item.embeddingText.hashCode()}"
