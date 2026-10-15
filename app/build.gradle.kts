@@ -94,6 +94,9 @@ dependencies {
     implementation(variantOf(libs.sqlcipher.android) { artifactType("aar") })
     implementation(libs.androidx.sqlite)
 
+    // Lokal ONNX-inferens – ingen separat app/modul krävs.
+    implementation(libs.onnxruntime.android)
+
     // Media3 / ExoPlayer
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
