@@ -12,7 +12,6 @@ import java.nio.LongBuffer
 import java.security.MessageDigest
 import java.text.Normalizer
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.sqrt
 
 /**
