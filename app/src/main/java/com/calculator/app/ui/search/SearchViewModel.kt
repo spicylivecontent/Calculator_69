@@ -9,11 +9,13 @@ import androidx.lifecycle.viewModelScope
 import com.calculator.app.ai.AgeSafety
 import com.calculator.app.ai.SearchPlanner
 import com.calculator.app.ai.embedding.OnnxEmbeddingEngine
+import com.calculator.app.ai.embedding.OnnxRuntimeEmbeddingEngine
 import com.calculator.app.data.AppPreferences
 import com.calculator.app.data.PlaybackResumePolicy
 import com.calculator.app.data.PlaybackStore
 import com.calculator.app.data.RecentPlayback
 import com.calculator.app.data.Repository
+import com.calculator.app.data.LocalVideoSearchHit
 import com.calculator.app.data.entity.SearchPresetEntity
 import com.calculator.app.data.entity.VideoEntity
 import com.calculator.app.data.extractor.MultiSiteSearcher
@@ -98,7 +100,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         private set
 
     /** True när lokal AI-embedding-ranking är laddad och aktiv. */
-    var aiRankingActive by mutableStateOf(OnnxEmbeddingEngine.Default.isReady)
+    var aiRankingActive by mutableStateOf(false)
         private set
 
     /** Persisted rules only; query-specific exclusions must not block saved videos. */
@@ -106,14 +108,15 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private var dislikeRulesLoaded = false
 
     init {
-        // Ladda eventuell nedladdad lokal ONNX/embedding-modell i bakgrunden.
+        // Installera/ladda den riktiga ONNX-modellen i appens privata lagring.
+        // Vid fel behålls den befintliga regelbaserade semantiska reservmotorn.
         viewModelScope.launch(Dispatchers.IO) {
-            val modelFile = java.io.File(getApplication<Application>().filesDir, "ai_models/bge-small-quant.bin")
-            if (modelFile.exists()) {
-                OnnxEmbeddingEngine.Default.loadModelFile(modelFile)
-            }
+            val runtime = OnnxRuntimeEmbeddingEngine.Default
+            val ready = runtime.isReady || runtime.installIfNeeded(getApplication<Application>())
+            ResultRanker.embeddingEngine = if (ready) runtime else OnnxEmbeddingEngine.Default
             withContext(Dispatchers.Main) {
-                aiRankingActive = OnnxEmbeddingEngine.Default.isReady && ResultRanker.semanticEnabled
+                aiRankingActive = ready && ResultRanker.semanticEnabled
+                if (ready) queueEmbeddingPrecompute(candidates.values.toList())
             }
         }
         // Uppdaterade regler hämtas i bakgrunden (högst en gång i dygnet) och slår igenom
@@ -138,6 +141,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private val candidates = LinkedHashMap<String, SearchResult>()
+    private var localLibraryHits: List<LocalVideoSearchHit> = emptyList()
     private var searchJob: Job? = null
     private var searchGeneration = 0L
     private var playbackJob: Job? = null
@@ -384,7 +388,20 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     /** Avancerad sökning direkt i all skrapad information. */
     fun onScrapedQueryChange(text: String) {
         scrapedQuery = text
+        localLibraryHits = emptyList()
+        if (text.isBlank()) {
+            localLibraryHits = emptyList()
+            publishResults()
+            return
+        }
         publishResults()
+        viewModelScope.launch {
+            val hits = withContext(Dispatchers.IO) { repository.searchSavedVideos(text, limit = 80) }
+            if (scrapedQuery == text) {
+                localLibraryHits = hits
+                publishResults()
+            }
+        }
     }
 
     fun clearScrapedQuery() {
@@ -444,6 +461,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         query = ""
         negativeKeywords = ""
         scrapedQuery = ""
+        localLibraryHits = emptyList()
         selectedSubcategoryIds = emptySet()
         selectedTagFilters = emptySet()
         availableTags = emptyList()
@@ -469,6 +487,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         queueIndex = 0
         StreamResolver.clearCache()
         OnnxEmbeddingEngine.Default.clearCache()
+        OnnxRuntimeEmbeddingEngine.Default.clearCache()
         playbackRevision++
     }
 
@@ -704,7 +723,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
         }
-        if (added > 0) publishResults()
+        if (added > 0) {
+            publishResults()
+            queueEmbeddingPrecompute(batch.mapNotNull { candidates[it.id] })
+        }
     }
 
     /**
@@ -749,6 +771,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         if (isFilteredOut(updated) || !matchesRequiredTerms(updated)) candidates.remove(updated.id)
         else candidates[updated.id] = updated
         publishResults()
+        candidates[updated.id]?.let { queueEmbeddingPrecompute(listOf(it)) }
     }
 
     private fun finalizeSearch() {
@@ -801,6 +824,30 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private fun matchesRequiredTerms(result: SearchResult): Boolean =
         SearchIntentMatcher.matchesRequiredTerms(result, activePlan?.requiredTerms.orEmpty())
 
+    /** Build document embeddings in the background; UI ranking only reads the warmed cache. */
+    private fun queueEmbeddingPrecompute(items: List<SearchResult>) {
+        val runtime = OnnxRuntimeEmbeddingEngine.Default
+        if (!runtime.isReady || items.isEmpty()) return
+        val generation = searchGeneration
+        val queryTexts = listOf(
+            activePlan?.terms?.joinToString(" ").orEmpty(),
+            ResultRanker.tokenize(query).joinToString(" "),
+            ResultRanker.tokenize(scrapedQuery).joinToString(" ")
+        ).filter { it.isNotBlank() }.distinct()
+        val snapshots = items.distinctBy { it.id }.map { item ->
+            item to "${item.id}:${item.embeddingText.hashCode()}"
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            queryTexts.forEach(runtime::cacheQueryEmbedding)
+            snapshots.forEach { (item, key) ->
+                runtime.cacheDocumentEmbedding(item.embeddingText, key)
+            }
+            withContext(Dispatchers.Main) {
+                if (generation == searchGeneration) publishResults()
+            }
+        }
+    }
+
     private fun publishResults() {
         val plan = activePlan
         val terms = plan?.terms?.takeIf { it.isNotEmpty() } ?: ResultRanker.tokenize(query)
@@ -822,8 +869,14 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         results = if (scrapedQuery.isBlank()) {
             ResultRanker.applySort(byTags, sortOrder)
         } else {
-            // Avancerad sökning i allt som skrapats in – rubrik, taggar och beskrivning.
-            ResultRanker.searchScraped(byTags, scrapedQuery)
+            // Lägg till lokala biblioteksresultat från FTS5/BM25 utan att dubblera
+            // samma video som redan finns i den aktuella externa sökningen.
+            val existingIds = byTags.mapTo(HashSet()) { it.id }
+            val localResults = localLibraryHits.asSequence()
+                .filterNot { it.id in existingIds }
+                .map { it.toSearchResult() }
+                .toList()
+            ResultRanker.searchScraped(byTags + localResults, scrapedQuery)
         }
 
         val playable = results.filter { it.isPlayable }.take(30)
@@ -1187,6 +1240,20 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     private val retryingIds = mutableSetOf<String>()
     private val failedOnce = mutableSetOf<String>()
+
+    private fun LocalVideoSearchHit.toSearchResult() = SearchResult(
+        id = id,
+        title = title,
+        thumbnailUrl = thumbnailUrl,
+        duration = com.calculator.app.data.model.DurationParser.format(durationSeconds),
+        durationSeconds = durationSeconds,
+        detailUrl = detailPageUrl.orEmpty(),
+        sourceSite = sourceSite,
+        playability = if (detailPageUrl.isNullOrBlank()) Playability.UNPLAYABLE else Playability.PLAYABLE,
+        tags = tags.split(',').map { it.trim() }.filter { it.isNotBlank() },
+        description = snippet,
+        qualityLabel = quality
+    )
 
     private fun SearchResult.toVideoEntity() = VideoEntity(
         id = id,
