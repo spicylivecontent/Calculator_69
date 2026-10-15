@@ -594,11 +594,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             if (queryToRemember.isNotBlank()) preferences.addSearchHistory(queryToRemember)
 
             try {
+                val perSiteBudget = (MAX_CANDIDATES + siteIds.size - 1) / siteIds.size
                 val outcome = activeSearcher.search(
                     queries = plan.queries,
                     siteIds = siteIds,
                     startPage = 1,
                     pageCount = 1,
+                    maxPerSite = perSiteBudget,
                     onBatch = { batch -> applyBatch(batch) }
                 )
                 siteReports = outcome.reports
@@ -643,11 +645,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             errorMessage = null
             try {
                 val nextPage = page + 1
+                val perSiteBudget = (MAX_CANDIDATES + siteIds.size - 1) / siteIds.size
                 val outcome = activeSearcher.search(
                     queries = plan.queries,
                     siteIds = siteIds,
                     startPage = nextPage,
                     pageCount = 1,
+                    maxPerSite = perSiteBudget,
                     onBatch = { batch -> applyBatch(batch) }
                 )
                 page = nextPage
