@@ -116,6 +116,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             ResultRanker.embeddingEngine = if (ready) runtime else OnnxEmbeddingEngine.Default
             withContext(Dispatchers.Main) {
                 aiRankingActive = ready && ResultRanker.semanticEnabled
+                if (ready) queueEmbeddingPrecompute(candidates.values.toList())
             }
         }
         // Uppdaterade regler hämtas i bakgrunden (högst en gång i dygnet) och slår igenom
@@ -713,7 +714,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
         }
-        if (added > 0) publishResults()
+        if (added > 0) {
+            publishResults()
+            queueEmbeddingPrecompute(batch.mapNotNull { candidates[it.id] })
+        }
     }
 
     /**
@@ -757,6 +761,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         if (isFilteredOut(updated) || !matchesRequiredTerms(updated)) candidates.remove(updated.id)
         else candidates[updated.id] = updated
         publishResults()
+        candidates[updated.id]?.let { queueEmbeddingPrecompute(listOf(it)) }
     }
 
     private fun finalizeSearch() {
@@ -808,6 +813,24 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
      */
     private fun matchesRequiredTerms(result: SearchResult): Boolean =
         SearchIntentMatcher.matchesRequiredTerms(result, activePlan?.requiredTerms.orEmpty())
+
+    /** Build document embeddings in the background; UI ranking only reads the warmed cache. */
+    private fun queueEmbeddingPrecompute(items: List<SearchResult>) {
+        val runtime = OnnxRuntimeEmbeddingEngine.Default
+        if (!runtime.isReady || items.isEmpty()) return
+        val generation = searchGeneration
+        val snapshots = items.distinctBy { it.id }.map { item ->
+            item to "${item.id}:${item.embeddingText.hashCode()}"
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            snapshots.forEach { (item, key) ->
+                runtime.cacheDocumentEmbedding(item.embeddingText, key)
+            }
+            withContext(Dispatchers.Main) {
+                if (generation == searchGeneration) publishResults()
+            }
+        }
+    }
 
     private fun publishResults() {
         val plan = activePlan
