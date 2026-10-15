@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.calculator.app.data.dao.*
 import com.calculator.app.data.entity.*
 import com.calculator.app.security.SqlCipherLoader
@@ -63,6 +64,15 @@ abstract class AppDatabase : RoomDatabase() {
 
             return Room.databaseBuilder(context, AppDatabase::class.java, plan.databaseName)
                 .openHelperFactory(SupportOpenHelperFactory(passphrase, null, true))
+                .addCallback(object : RoomDatabase.Callback() {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        Fts5VideoIndex.install(db)
+                    }
+
+                    override fun onOpen(db: SupportSQLiteDatabase) {
+                        Fts5VideoIndex.install(db)
+                    }
+                })
                 .build()
         }
 
