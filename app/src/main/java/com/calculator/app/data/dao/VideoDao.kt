@@ -1,7 +1,9 @@
 package com.calculator.app.data.dao
 
 import androidx.room.*
+import androidx.sqlite.db.SupportSQLiteQuery
 import com.calculator.app.data.entity.VideoEntity
+import com.calculator.app.data.LocalVideoSearchHit
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -28,4 +30,8 @@ interface VideoDao {
 
     @Query("DELETE FROM videos")
     suspend fun clearAll()
+
+    /** FTS5/BM25 query is intentionally raw so Room does not parse the virtual table schema. */
+    @RawQuery(observedEntities = [VideoEntity::class])
+    suspend fun searchLocalVideoHits(query: SupportSQLiteQuery): List<LocalVideoSearchHit>
 }
