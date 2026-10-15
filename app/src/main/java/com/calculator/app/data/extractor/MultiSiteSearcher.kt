@@ -110,14 +110,18 @@ class MultiSiteSearcher(
                 var attempted = false
                 // Give every query variant a share of the site's budget. Previously the first
                 // broad query could return 36 items and stop the loop before any variants ran.
-                val queryBudget = ((maxPerSite.coerceAtLeast(1) + queries.size - 1) / queries.size).coerceAtLeast(1)
+                val safeBudget = maxPerSite.coerceAtLeast(1)
+                val baseQueryBudget = safeBudget / queries.size
+                val remainderQueryBudget = safeBudget % queries.size
                 val acceptedByQuery = HashMap<String, Int>()
 
                 val firstPage = startPage.coerceAtLeast(1)
                 for (page in firstPage until (firstPage + pageCount.coerceAtLeast(1))) {
                     if (page > 1 && !extractor.supportsPagination) break
-                    for (query in queries) {
+                    for ((queryIndex, query) in queries.withIndex()) {
                         if (collected.size >= maxPerSite) break
+                        val queryBudget = baseQueryBudget + if (queryIndex < remainderQueryBudget) 1 else 0
+                        if (queryBudget <= 0) continue
                         val queryKey = query.text.lowercase(java.util.Locale.ROOT)
                         val alreadyAccepted = acceptedByQuery[queryKey] ?: 0
                         if (alreadyAccepted >= queryBudget) continue
