@@ -618,10 +618,11 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     queries = plan.queries,
                     siteIds = siteIds,
                     startPage = 1,
-                    pageCount = 1,
+                    pageCount = INITIAL_PAGE_COUNT,
                     maxPerSite = perSiteBudget,
                     onBatch = { batch -> applyBatch(batch) }
                 )
+                page = INITIAL_PAGE_COUNT
                 siteReports = outcome.reports
                 canLoadMore = outcome.reports.any { it.count > 0 }
                 isSearching = false
@@ -669,11 +670,11 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     queries = plan.queries,
                     siteIds = siteIds,
                     startPage = nextPage,
-                    pageCount = 1,
+                    pageCount = LOAD_MORE_PAGE_COUNT,
                     maxPerSite = perSiteBudget,
                     onBatch = { batch -> applyBatch(batch) }
                 )
-                page = nextPage
+                page = nextPage + LOAD_MORE_PAGE_COUNT - 1
                 siteReports = outcome.reports
                 canLoadMore = outcome.reports.any { it.count > 0 }
                 enrichPending(
@@ -887,8 +888,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     // Uppspelning
     // ---------------------------------------------------------------------
 
-    /** Öppnar filmen på sajten i den inbyggda WebView-spelaren. */
-    fun playVideo(result: SearchResult) = openOnSite(result, startPositionMs = -1L)
+    /** Försök direktuppspelning som standard; om det inte går öppnas originalspelaren automatiskt. */
+    fun playVideo(result: SearchResult) {
+        queue = results.filter { it.isPlayable }
+        if (queue.none { it.id == result.id }) queue = listOf(result)
+        queueIndex = queue.indexOfFirst { it.id == result.id }.coerceAtLeast(0)
+        playNativeStream(result)
+    }
 
     /** Öppnar en sparad/spelad video igen, med återupptagning där användaren slutade. */
     fun playSavedVideo(video: VideoEntity) {
@@ -912,13 +918,17 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 dislikedWords = loadDislikeRules()
                 dislikeRulesLoaded = true
             }
-            openOnSite(entry.toSearchResult(), startPositionMs = playbackStore.position(entry.id))
+            val result = entry.toSearchResult()
+            queue = listOf(result)
+            queueIndex = 0
+            playNativeStream(result)
         }
     }
 
     fun playRelative(offset: Int) {
         val target = queue.getOrNull(queueIndex + offset) ?: return
-        openOnSite(target, startPositionMs = -1L, keepQueue = true)
+        queueIndex += offset
+        playNativeStream(target)
     }
 
     /** Stänger WebView-spelaren. */
@@ -931,8 +941,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * Beta: spelar upp en extraherad ström i den inbyggda spelaren i stället.
-     * Används bara när användaren själv väljer det i spelarens meny.
+     * Försöker spela en extraherad ström i den inbyggda spelaren. Om extraktion
+     * misslyckas faller appen tillbaka till originalsidans WebView-spelare.
      */
     fun playNativeStream(result: SearchResult) {
         cancelPlayback()
@@ -942,10 +952,11 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             resolvingTitle = result.title
             errorMessage = null
             try {
-                val stream = resolveStream(result, forceRefresh = true)
+                val stream = resolveStream(result, forceRefresh = false)
                 if (stream == null) {
                     StreamResolver.invalidate(result.detailUrl)
-                    errorMessage = "Ingen direktuppspelningsbar ström hittades – videon öppnas på sajten i stället."
+                    noticeMessage = "Ingen direktström hittades. Öppnar originalspelaren i stället."
+                    openOnSite(result, startPositionMs = -1L, keepQueue = true)
                     return@launch
                 }
                 val playable = result.copy(
@@ -1268,12 +1279,14 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     )
 
     private companion object {
-        const val MAX_CANDIDATES = 220
+        const val MAX_CANDIDATES = 660
         const val TAG_CLOUD_SIZE = 24
         const val WAVE_SIZE = 10
-        const val TARGET_VERIFIED = 35
-        const val FULL_WAVE_LIMIT = 8
-        const val FULL_VERIFY_BUDGET = 80
-        const val LOAD_MORE_BUDGET = 40
+        const val TARGET_VERIFIED = 100
+        const val FULL_WAVE_LIMIT = 18
+        const val FULL_VERIFY_BUDGET = 180
+        const val LOAD_MORE_BUDGET = 120
+        const val INITIAL_PAGE_COUNT = 2
+        const val LOAD_MORE_PAGE_COUNT = 2
     }
 }
