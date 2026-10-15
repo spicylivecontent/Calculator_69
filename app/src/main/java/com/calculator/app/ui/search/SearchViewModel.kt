@@ -167,7 +167,6 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         activePlan = null
         blockedWords = emptyList()
         candidates.clear()
-        localLibraryHits = emptyList()
         results = emptyList()
         lastFeed = emptyList()
         siteReports = emptyList()
@@ -388,6 +387,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     /** Avancerad sökning direkt i all skrapad information. */
     fun onScrapedQueryChange(text: String) {
         scrapedQuery = text
+        localLibraryHits = emptyList()
         if (text.isBlank()) {
             localLibraryHits = emptyList()
             publishResults()
@@ -460,6 +460,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         query = ""
         negativeKeywords = ""
         scrapedQuery = ""
+        localLibraryHits = emptyList()
         selectedSubcategoryIds = emptySet()
         selectedTagFilters = emptySet()
         availableTags = emptyList()
