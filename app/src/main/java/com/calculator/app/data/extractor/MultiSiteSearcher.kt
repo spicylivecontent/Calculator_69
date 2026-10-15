@@ -108,12 +108,19 @@ class MultiSiteSearcher(
                 val collected = LinkedHashMap<String, SearchResult>()
                 var failure: String? = null
                 var attempted = false
+                // Give every query variant a share of the site's budget. Previously the first
+                // broad query could return 36 items and stop the loop before any variants ran.
+                val queryBudget = ((maxPerSite.coerceAtLeast(1) + queries.size - 1) / queries.size).coerceAtLeast(1)
+                val acceptedByQuery = HashMap<String, Int>()
 
                 val firstPage = startPage.coerceAtLeast(1)
                 for (page in firstPage until (firstPage + pageCount.coerceAtLeast(1))) {
                     if (page > 1 && !extractor.supportsPagination) break
                     for (query in queries) {
                         if (collected.size >= maxPerSite) break
+                        val queryKey = query.text.lowercase(java.util.Locale.ROOT)
+                        val alreadyAccepted = acceptedByQuery[queryKey] ?: 0
+                        if (alreadyAccepted >= queryBudget) continue
                         attempted = true
                         try {
                             val found = searchOne(extractor, query.text, page)
@@ -126,8 +133,15 @@ class MultiSiteSearcher(
                             val tagged = found.map { result ->
                                 result.copy(matchedTerms = (result.matchedTerms + query.terms).distinct())
                             }
-                            val fresh = tagged.filter { collected.putIfAbsent(it.id, it) == null }
-                            if (fresh.isNotEmpty()) onBatch(fresh)
+                            val remainingForQuery = queryBudget - alreadyAccepted
+                            val fresh = tagged.distinctBy { it.id }
+                                .filterNot { it.id in collected }
+                                .take(remainingForQuery)
+                            fresh.forEach { collected[it.id] = it }
+                            if (fresh.isNotEmpty()) {
+                                acceptedByQuery[queryKey] = alreadyAccepted + fresh.size
+                                onBatch(fresh)
+                            }
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (error: Exception) {
@@ -238,7 +252,7 @@ class MultiSiteSearcher(
     )
 
     companion object {
-        const val MAX_PER_SITE = 36
+        const val MAX_PER_SITE = 72
         const val VERIFICATION_CONCURRENCY = 8
 
         private fun defaultExtractors(): List<SiteExtractor> = listOf(
