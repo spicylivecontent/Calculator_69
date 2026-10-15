@@ -3,12 +3,14 @@ package com.calculator.app.data.extractor
 import com.calculator.app.data.model.SearchQuery
 import com.calculator.app.data.model.SearchResult
 import com.calculator.app.network.NetworkCondition
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 
 class MultiSiteSearcherTest {
     @Test
@@ -112,4 +114,72 @@ class MultiSiteSearcherTest {
         assertEquals(2, outcome.results.count { it.id.startsWith("synonym-") })
         assertEquals(2, outcome.results.count { it.id.startsWith("rare-") })
     }
+
+    @Test
+    fun paginatedSearchCollectsAdditionalResultsWithinTheSiteBudget() = runBlocking {
+        val pages = mutableListOf<Int>()
+        val extractor = object : SiteExtractor {
+            override val siteName = "paged-site"
+            override val baseUrl = "https://example.com"
+
+            override suspend fun search(query: String, page: Int): List<SearchResult> {
+                pages += page
+                val firstId = if (page == 1) 1 else 3
+                return (firstId..firstId + 1).map { index ->
+                    SearchResult(
+                        id = "paged-$index",
+                        title = "Page $page result $index",
+                        thumbnailUrl = null,
+                        duration = null,
+                        detailUrl = "https://example.com/video/$index",
+                        sourceSite = siteName
+                    )
+                }
+            }
+        }
+
+        val outcome = MultiSiteSearcher(
+            extractors = listOf(extractor),
+            network = NetworkCondition.Default
+        ).search(
+            queries = listOf(SearchQuery("query", listOf("query"))),
+            pageCount = 2,
+            maxPerSite = 4
+        )
+
+        assertEquals(listOf(1, 2), pages)
+        assertEquals(4, outcome.results.size)
+        assertEquals(setOf("paged-1", "paged-2", "paged-3", "paged-4"), outcome.results.map { it.id }.toSet())
+    }
+
+    @Test
+    fun allSelectedSitesRunConcurrently() = runBlocking {
+        val active = AtomicInteger()
+        val maxActive = AtomicInteger()
+        val extractors = (1..11).map { index ->
+            object : SiteExtractor {
+                override val siteName = "parallel-site-$index"
+                override val baseUrl = "https://example.com"
+
+                override suspend fun search(query: String, page: Int): List<SearchResult> {
+                    val now = active.incrementAndGet()
+                    maxActive.updateAndGet { previous -> maxOf(previous, now) }
+                    try {
+                        delay(100)
+                        return emptyList()
+                    } finally {
+                        active.decrementAndGet()
+                    }
+                }
+            }
+        }
+
+        MultiSiteSearcher(
+            extractors = extractors,
+            network = NetworkCondition.Default
+        ).search(queries = listOf(SearchQuery("query", listOf("query"))))
+
+        assertEquals("All 11 selected sites should overlap in the same search wave", 11, maxActive.get())
+    }
+
 }

@@ -100,7 +100,9 @@ class MultiSiteSearcher(
             return@coroutineScope SearchOutcome(results = emptyList(), reports = reports)
         }
 
-        val siteSemaphore = Semaphore(network.siteParallelism.coerceAtLeast(1))
+        // Run every selected site in the same wave. Each site's own queries/pages remain sequential,
+        // gaining cross-site parallelism without flooding a single host with concurrent requests.
+        val siteSemaphore = Semaphore(selected.size.coerceAtLeast(1))
 
         val perSite = selected.map { extractor ->
             async(Dispatchers.IO) {
@@ -122,7 +124,8 @@ class MultiSiteSearcher(
                         if (collected.size >= maxPerSite) break
                         val queryBudget = baseQueryBudget + if (queryIndex < remainderQueryBudget) 1 else 0
                         if (queryBudget <= 0) continue
-                        val queryKey = query.text.lowercase(java.util.Locale.ROOT)
+                        // Keep a separate quota for each page so pagination can contribute new results.
+                        val queryKey = "${page}:${query.text.lowercase(java.util.Locale.ROOT)}"
                         val alreadyAccepted = acceptedByQuery[queryKey] ?: 0
                         if (alreadyAccepted >= queryBudget) continue
                         attempted = true

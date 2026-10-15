@@ -204,11 +204,11 @@ fun SettingsScreen(
         item {
             VaultSettingCard(
                 title = "Uppspelning",
-                subtitle = "Videorna spelas på sajten i en inbyggd webbläsare med annonsblockering"
+                subtitle = "Direktuppspelning i appen försöks först; originalsidans spelare används automatiskt som reserv"
             ) {
                 Text(
-                    "Välj \"Direktuppspelning (beta)\" i spelarens meny om du hellre vill spela upp en " +
-                        "extraherad ström i appens egen spelare.",
+                    "Appen försöker först spela en extraherad ström direkt. Om sajten inte ger en kompatibel ström " +
+                        "öppnas originalsidans spelare automatiskt.",
                     color = VaultTextSecondary,
                     fontSize = 11.sp
                 )
