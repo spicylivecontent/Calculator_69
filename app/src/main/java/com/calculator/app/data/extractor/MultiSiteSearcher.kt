@@ -122,7 +122,8 @@ class MultiSiteSearcher(
                         if (collected.size >= maxPerSite) break
                         val queryBudget = baseQueryBudget + if (queryIndex < remainderQueryBudget) 1 else 0
                         if (queryBudget <= 0) continue
-                        val queryKey = query.text.lowercase(java.util.Locale.ROOT)
+                        // Keep a separate quota for each page so pagination can contribute new results.
+                        val queryKey = "${page}:${query.text.lowercase(java.util.Locale.ROOT)}"
                         val alreadyAccepted = acceptedByQuery[queryKey] ?: 0
                         if (alreadyAccepted >= queryBudget) continue
                         attempted = true
