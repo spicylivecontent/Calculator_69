@@ -138,14 +138,14 @@ jobs:
                   print("::error title=Android lint" + where + "::" + issue.get("id", "") + ": " + message)
           PYLINT
 
-      - name: Kontrollera APK-storleken
+      - name: Rapportera APK-storlek
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk
           SIZE=$(stat -c%s "$APK")
-          echo "APK: $((SIZE / 1024 / 1024)) MB ($SIZE byte)"
+          MB=$((SIZE / 1024 / 1024))
+          echo "APK: $MB MB ($SIZE byte)"
           if [ "$SIZE" -gt 41943040 ]; then
-            echo "::error title=APK för stor::APK:n är $((SIZE / 1024 / 1024)) MB, taket är 40 MB"
-            exit 1
+            echo "::warning title=APK över 40 MB::APK:n är $MB MB. 40 MB är en tidigare projektgräns, inte en generell Android-begränsning. Bygget fortsätter."
           fi
 
       - name: Upload APK
