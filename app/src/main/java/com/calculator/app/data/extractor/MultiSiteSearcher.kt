@@ -100,7 +100,9 @@ class MultiSiteSearcher(
             return@coroutineScope SearchOutcome(results = emptyList(), reports = reports)
         }
 
-        val siteSemaphore = Semaphore(network.siteParallelism.coerceAtLeast(1))
+        // Run every selected site in the same wave. Each site's own queries/pages remain sequential,
+        // gaining cross-site parallelism without flooding a single host with concurrent requests.
+        val siteSemaphore = Semaphore(selected.size.coerceAtLeast(1))
 
         val perSite = selected.map { extractor ->
             async(Dispatchers.IO) {
