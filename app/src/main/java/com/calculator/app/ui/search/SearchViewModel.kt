@@ -819,10 +819,15 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val runtime = OnnxRuntimeEmbeddingEngine.Default
         if (!runtime.isReady || items.isEmpty()) return
         val generation = searchGeneration
+        val queryTexts = listOf(
+            activePlan?.terms?.joinToString(" ").orEmpty(),
+            scrapedQuery
+        ).filter { it.isNotBlank() }.distinct()
         val snapshots = items.distinctBy { it.id }.map { item ->
             item to "${item.id}:${item.embeddingText.hashCode()}"
         }
         viewModelScope.launch(Dispatchers.IO) {
+            queryTexts.forEach(runtime::cacheQueryEmbedding)
             snapshots.forEach { (item, key) ->
                 runtime.cacheDocumentEmbedding(item.embeddingText, key)
             }
