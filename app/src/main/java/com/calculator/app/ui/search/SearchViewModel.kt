@@ -716,7 +716,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         while (waves < waveLimit && spent < budget) {
             val pending = ResultRanker.rank(
                 candidates.values.filter { it.playability == Playability.CHECKING || it.playability == Playability.UNVERIFIED },
-                plan.terms
+                plan.terms,
+                applyRareTermGate = false
             ).take(WAVE_SIZE)
             if (pending.isEmpty()) break
 
