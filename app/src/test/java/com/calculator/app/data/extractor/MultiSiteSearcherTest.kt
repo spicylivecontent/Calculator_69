@@ -128,6 +128,7 @@ class MultiSiteSearcherTest {
                         id = "paged-$index",
                         title = "Page $page result $index",
                         thumbnailUrl = null,
+                        duration = null,
                         detailUrl = "https://example.com/video/$index",
                         sourceSite = siteName
                     )
