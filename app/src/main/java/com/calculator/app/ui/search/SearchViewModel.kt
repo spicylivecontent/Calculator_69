@@ -676,6 +676,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun applyBatch(batch: List<SearchResult>) = withContext(Dispatchers.Main) {
         var added = 0
+        // Keep source coverage balanced: concurrent site responses must not let the first
+        // few sites consume the entire global candidate pool before other sites respond.
+        val selectedSiteCount = effectiveSiteIds().size.coerceAtLeast(1)
+        val perSiteCandidateLimit = (MAX_CANDIDATES + selectedSiteCount - 1) / selectedSiteCount
         for (item in batch) {
             if (AgeSafety.containsBlockedTerm(item.title)) continue
             // Apply the same whole-term boundaries before enrichment as after it;
@@ -685,6 +689,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             val existing = candidates[item.id]
             if (existing == null) {
                 if (candidates.size >= MAX_CANDIDATES) continue
+                if (candidates.values.count { it.sourceSite == item.sourceSite } >= perSiteCandidateLimit) continue
                 candidates[item.id] = item.copy(playability = Playability.CHECKING)
                 added++
             } else {
@@ -1192,12 +1197,12 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     )
 
     private companion object {
-        const val MAX_CANDIDATES = 140
+        const val MAX_CANDIDATES = 220
         const val TAG_CLOUD_SIZE = 24
         const val WAVE_SIZE = 10
-        const val TARGET_VERIFIED = 20
-        const val FULL_WAVE_LIMIT = 6
-        const val FULL_VERIFY_BUDGET = 60
-        const val LOAD_MORE_BUDGET = 30
+        const val TARGET_VERIFIED = 35
+        const val FULL_WAVE_LIMIT = 8
+        const val FULL_VERIFY_BUDGET = 80
+        const val LOAD_MORE_BUDGET = 40
     }
 }
