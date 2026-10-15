@@ -34,7 +34,12 @@ object SearchIntentMatcher {
 
         return required.all { term ->
             val alternatives = when (term.lowercase(java.util.Locale.ROOT)) {
-                "atm", "a2m", "ass to mouth" -> listOf("atm", "a2m", "ass to mouth")
+                "atm", "a2m", "ass to mouth" -> listOf("atm", "a2m", "ass to mouth", "asstomouth", "ass 2 mouth")
+                "scat" -> listOf("scat", "scatology", "toilet", "poop", "pooping", "dirty ass")
+                "fisting" -> listOf("fisting", "fist")
+                "pegging" -> listOf("pegging", "strapon", "strap on", "strap-on")
+                "cbt" -> listOf("cbt", "cock and ball", "ballbusting", "ball busting")
+                "watersports" -> listOf("watersports", "water sports", "golden shower", "piss", "pee")
                 "latina", "latin" -> listOf("latina", "latin", "hispanic")
                 "redhead" -> listOf("redhead", "red hair")
                 else -> listOf(term)
