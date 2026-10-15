@@ -307,4 +307,25 @@ class ResultRankerTest {
         assertEquals("semantic", ranked.first().id)
         assertTrue(ResultRanker.semanticScoreFor(semanticHit, terms) > 30)
     }
+
+    @Test
+    fun rareTermGateCanBeDeferredUntilMetadataEnrichment() {
+        val titleOnly = result("title-only", "A long unrelated clip title")
+        assertTrue(ResultRanker.rank(listOf(titleOnly), listOf("scat")).isEmpty())
+        assertEquals(
+            listOf("title-only"),
+            ResultRanker.rank(
+                listOf(titleOnly),
+                listOf("scat"),
+                applyRareTermGate = false
+            ).map { it.id }
+        )
+    }
+
+    @Test
+    fun requiredRareTermsAcceptTheSameAliasesAsRareTermRanking() {
+        val aliasResult = result("alias", "A clip", tags = listOf("pooping"))
+        assertTrue(SearchIntentMatcher.matchesRequiredTerms(aliasResult, listOf("scat")))
+        assertTrue(SearchIntentMatcher.matchesRequiredTerms(result("atm-alias", "A clip", tags = listOf("ass to mouth")), listOf("atm")))
+    }
 }
