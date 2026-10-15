@@ -239,6 +239,7 @@ class OnnxRuntimeEmbeddingEngine private constructor() : EmbeddingEngine, AutoCl
             }
             try {
                 connection.connect()
+                if (connection.url.protocol != "https") return false
                 if (connection.responseCode !in 200..299) return false
                 val declaredLength = connection.contentLengthLong
                 if (declaredLength > maxBytes) return false
