@@ -33,6 +33,10 @@ class OnnxRuntimeEmbeddingEngine private constructor() : EmbeddingEngine, AutoCl
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, FloatArray>?): Boolean =
             size > MAX_CACHE_ENTRIES
     }
+    private val queryCache = object : LinkedHashMap<String, FloatArray>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, FloatArray>?): Boolean =
+            size > 32
+    }
 
     override val isReady: Boolean get() = session != null && vocabulary.isNotEmpty()
 
@@ -130,19 +134,37 @@ class OnnxRuntimeEmbeddingEngine private constructor() : EmbeddingEngine, AutoCl
         }
     }
 
+    /**
+     * Precompute document embeddings off the UI thread. Ranking only reads this cache so
+     * a large result list cannot trigger dozens of synchronous model inferences on main.
+     */
+    fun cacheDocumentEmbedding(text: String, cacheKey: String) {
+        if (!isReady || text.isBlank()) return
+        synchronized(cacheLock) {
+            if (cache.containsKey(cacheKey)) return
+        }
+        val vector = embed(text)
+        synchronized(cacheLock) { cache[cacheKey] = vector }
+    }
+
     override fun similarity(queryText: String, documentText: String, cacheKey: String?): Float {
         if (!isReady || queryText.isBlank() || documentText.isBlank()) return 0f
-        val queryVector = embed(queryText)
         val documentVector = if (cacheKey == null) {
             embed(documentText)
         } else synchronized(cacheLock) {
-            cache.getOrPut(cacheKey) { embed(documentText) }
+            cache[cacheKey]
+        } ?: return 0f
+        val queryVector = synchronized(cacheLock) {
+            queryCache.getOrPut(queryText) { embed(queryText) }
         }
         return EmbeddingEngine.cosineSimilarity(queryVector, documentVector)
     }
 
     override fun clearCache() {
-        synchronized(cacheLock) { cache.clear() }
+        synchronized(cacheLock) {
+            cache.clear()
+            queryCache.clear()
+        }
     }
 
     @Synchronized
