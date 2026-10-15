@@ -39,9 +39,12 @@ jobs:
         id: build_apk
         run: |
           set -o pipefail
-          # assembleDebugAndroidTest kompilerar UI-testerna också, så att stavfel och
-          # API-fel där upptäcks direkt i det snabba jobbet (emulatorjobbet kör dem sedan).
-          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --stacktrace --console=plain 2>&1 | tee gradle-build.log
+          # Kör debug och release i separata Gradle-anrop. Room/KSP skriver databasschemat
+          # till samma schemaLocation för båda varianterna; att bygga varianterna i samma
+          # task graph kan lämna en partiell JSON-fil och få release-KSP att krascha.
+          # UI-test-APK:n kompileras här; emulatorjobbet kör själva testerna separat.
+          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --stacktrace --console=plain 2>&1 | tee gradle-build.log
+          ./gradlew --no-daemon assembleRelease --stacktrace --console=plain 2>&1 | tee -a gradle-build.log
 
       - name: Report Gradle failure details
         if: failure() && steps.build_apk.outcome == 'failure'
