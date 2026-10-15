@@ -14,6 +14,8 @@ internal object Fts5VideoIndex {
 
     fun install(db: SupportSQLiteDatabase) {
         available = false
+        // Room uses INSERT OR REPLACE for saved videos; ensure replacement deletes fire FTS triggers.
+        runCatching { db.execSQL("PRAGMA recursive_triggers=ON") }
         try {
             val existed = db.query(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='video_search_fts' LIMIT 1"
