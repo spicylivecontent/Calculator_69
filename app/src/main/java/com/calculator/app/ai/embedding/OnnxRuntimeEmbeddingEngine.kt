@@ -147,16 +147,23 @@ class OnnxRuntimeEmbeddingEngine private constructor() : EmbeddingEngine, AutoCl
         synchronized(cacheLock) { cache[cacheKey] = vector }
     }
 
+    fun cacheQueryEmbedding(text: String) {
+        if (!isReady || text.isBlank()) return
+        synchronized(cacheLock) {
+            if (queryCache.containsKey(text)) return
+        }
+        val vector = embed(text)
+        synchronized(cacheLock) { queryCache[text] = vector }
+    }
+
     override fun similarity(queryText: String, documentText: String, cacheKey: String?): Float {
         if (!isReady || queryText.isBlank() || documentText.isBlank()) return 0f
         val documentVector = if (cacheKey == null) {
-            embed(documentText)
+            return 0f
         } else synchronized(cacheLock) {
             cache[cacheKey]
         } ?: return 0f
-        val queryVector = synchronized(cacheLock) {
-            queryCache.getOrPut(queryText) { embed(queryText) }
-        }
+        val queryVector = synchronized(cacheLock) { queryCache[queryText] } ?: return 0f
         return EmbeddingEngine.cosineSimilarity(queryVector, documentVector)
     }
 
