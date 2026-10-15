@@ -261,9 +261,12 @@ object ResultRanker {
     fun rank(
         results: List<SearchResult>,
         terms: List<String>,
-        engine: EmbeddingEngine = embeddingEngine
+        engine: EmbeddingEngine = embeddingEngine,
+        applyRareTermGate: Boolean = true
     ): List<SearchResult> {
-        val afterRare = requireRareMatches(results, terms)
+        // Before detail-page metadata is loaded, a rare term may only exist in tags or
+        // description. Callers selecting candidates for enrichment must not discard them yet.
+        val afterRare = if (applyRareTermGate) requireRareMatches(results, terms) else results
         val scored = dedupeByTitle(
             afterRare.map { result ->
                 result.copy(

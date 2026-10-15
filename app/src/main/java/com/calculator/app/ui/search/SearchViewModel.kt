@@ -594,11 +594,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             if (queryToRemember.isNotBlank()) preferences.addSearchHistory(queryToRemember)
 
             try {
+                val perSiteBudget = (MAX_CANDIDATES + siteIds.size - 1) / siteIds.size
                 val outcome = activeSearcher.search(
                     queries = plan.queries,
                     siteIds = siteIds,
                     startPage = 1,
                     pageCount = 1,
+                    maxPerSite = perSiteBudget,
                     onBatch = { batch -> applyBatch(batch) }
                 )
                 siteReports = outcome.reports
@@ -643,11 +645,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             errorMessage = null
             try {
                 val nextPage = page + 1
+                val perSiteBudget = (MAX_CANDIDATES + siteIds.size - 1) / siteIds.size
                 val outcome = activeSearcher.search(
                     queries = plan.queries,
                     siteIds = siteIds,
                     startPage = nextPage,
                     pageCount = 1,
+                    maxPerSite = perSiteBudget,
                     onBatch = { batch -> applyBatch(batch) }
                 )
                 page = nextPage
@@ -676,6 +680,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun applyBatch(batch: List<SearchResult>) = withContext(Dispatchers.Main) {
         var added = 0
+        // Keep source coverage balanced: concurrent site responses must not let the first
+        // few sites consume the entire global candidate pool before other sites respond.
+        val selectedSiteCount = effectiveSiteIds().size.coerceAtLeast(1)
+        val perSiteCandidateLimit = (MAX_CANDIDATES + selectedSiteCount - 1) / selectedSiteCount
         for (item in batch) {
             if (AgeSafety.containsBlockedTerm(item.title)) continue
             // Apply the same whole-term boundaries before enrichment as after it;
@@ -685,6 +693,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             val existing = candidates[item.id]
             if (existing == null) {
                 if (candidates.size >= MAX_CANDIDATES) continue
+                if (candidates.values.count { it.sourceSite == item.sourceSite } >= perSiteCandidateLimit) continue
                 candidates[item.id] = item.copy(playability = Playability.CHECKING)
                 added++
             } else {
@@ -716,7 +725,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         while (waves < waveLimit && spent < budget) {
             val pending = ResultRanker.rank(
                 candidates.values.filter { it.playability == Playability.CHECKING || it.playability == Playability.UNVERIFIED },
-                plan.terms
+                plan.terms,
+                applyRareTermGate = false
             ).take(WAVE_SIZE)
             if (pending.isEmpty()) break
 
@@ -1191,12 +1201,12 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     )
 
     private companion object {
-        const val MAX_CANDIDATES = 140
+        const val MAX_CANDIDATES = 220
         const val TAG_CLOUD_SIZE = 24
         const val WAVE_SIZE = 10
-        const val TARGET_VERIFIED = 20
-        const val FULL_WAVE_LIMIT = 6
-        const val FULL_VERIFY_BUDGET = 60
-        const val LOAD_MORE_BUDGET = 30
+        const val TARGET_VERIFIED = 35
+        const val FULL_WAVE_LIMIT = 8
+        const val FULL_VERIFY_BUDGET = 80
+        const val LOAD_MORE_BUDGET = 40
     }
 }

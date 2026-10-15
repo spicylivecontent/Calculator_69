@@ -71,4 +71,45 @@ class MultiSiteSearcherTest {
         assertFalse(report.ok)
         assertEquals("Ingen nätverksanslutning", report.message)
     }
+
+    @Test
+    fun resultBudgetIsSharedAcrossQueryVariants() = runBlocking {
+        val called = linkedSetOf<String>()
+        val extractor = object : SiteExtractor {
+            override val siteName = "fair-site"
+            override val baseUrl = "https://example.com"
+
+            override suspend fun search(query: String, page: Int): List<SearchResult> {
+                called += query
+                return (1..10).map { index ->
+                    SearchResult(
+                        id = "$query-$index",
+                        title = "$query result $index",
+                        thumbnailUrl = null,
+                        duration = null,
+                        detailUrl = "https://example.com/video/$query-$index",
+                        sourceSite = siteName
+                    )
+                }
+            }
+        }
+
+        val outcome = MultiSiteSearcher(
+            extractors = listOf(extractor),
+            network = NetworkCondition.Default
+        ).search(
+            queries = listOf(
+                SearchQuery("broad", listOf("broad"), isPrimary = true),
+                SearchQuery("synonym", listOf("synonym")),
+                SearchQuery("rare", listOf("rare"))
+            ),
+            maxPerSite = 6
+        )
+
+        assertEquals(setOf("broad", "synonym", "rare"), called)
+        assertEquals(6, outcome.results.size)
+        assertEquals(2, outcome.results.count { it.id.startsWith("broad-") })
+        assertEquals(2, outcome.results.count { it.id.startsWith("synonym-") })
+        assertEquals(2, outcome.results.count { it.id.startsWith("rare-") })
+    }
 }
