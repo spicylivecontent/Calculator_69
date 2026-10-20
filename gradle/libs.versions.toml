@@ -4,7 +4,7 @@
 # 5.5.0 kräver compileSdk 37; media3 1.11.1 kräver kotlin-stdlib 2.2+.
 agp = "9.4.1"
 kotlin = "2.4.21"
-coreKtx = "1.15.0"
+coreKtx = "1.19.1"
 junit = "4.13.2"
 junitVersion = "1.2.1"
 espressoCore = "3.6.1"
