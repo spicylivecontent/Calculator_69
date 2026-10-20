@@ -105,7 +105,7 @@ dependencies {
 
     // Networking + HTML parsing
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jsoup:jsoup:1.18.1")
+    implementation("org.jsoup:jsoup:1.23.2")
 
     // Coil för thumbnails
     implementation("io.coil-kt:coil-compose:2.7.0")
