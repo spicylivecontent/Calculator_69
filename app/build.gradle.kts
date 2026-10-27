@@ -104,7 +104,7 @@ dependencies {
     implementation(libs.androidx.media3.common)
 
     // Networking + HTML parsing
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
     implementation("org.jsoup:jsoup:1.18.1")
 
     // Coil för thumbnails
@@ -116,8 +116,8 @@ dependencies {
     testImplementation(libs.junit)
 
     // Enhetstester som kör mot en lokal HTTPS-server (MockWebServer)
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.5.1")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:5.5.1")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
